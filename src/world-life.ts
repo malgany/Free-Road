@@ -1,3 +1,6 @@
+import {MISSION} from './mission-design';
+import {ZombieHorde} from './zombie-horde';
+import {makeCargo,makeShelter,propAnchor} from './cargo-props';
 import * as THREE from 'three';
 import type {GameMap,CarState,Point} from './types';
 import type {Expedition} from './expedition';
@@ -7,28 +10,24 @@ import {seeded,inMulti,distance} from './geometry';
 
 /** Small fixed pools: actors and weather do not add meshes as the player travels. */
 export class WorldLife {
- group=new THREE.Group();body:THREE.InstancedMesh;heads:THREE.InstancedMesh;legs:THREE.InstancedMesh;
+ horde=new ZombieHorde();group=new THREE.Group();body:THREE.InstancedMesh;heads:THREE.InstancedMesh;legs:THREE.InstancedMesh;
  marker=new THREE.Group();shelter=new THREE.Group();rain:THREE.Points;weather:Weather|null=null;
- private dummy=new THREE.Object3D();private drops=new Float32Array(240*3);private time=0;
+ private world?:CollisionWorld;private propKey='';private depot:THREE.Group|null=null;private cargo={fuel:makeCargo('fuel'),supplies:makeCargo('supplies'),medical:makeCargo('medical')};private roofCargo={fuel:makeCargo('fuel'),supplies:makeCargo('supplies'),medical:makeCargo('medical')};private dummy=new THREE.Object3D();private drops=new Float32Array(240*3);private time=0;
  constructor(){
-  const mesh=(g:THREE.BufferGeometry,c:string,n:number)=>{const m=new THREE.InstancedMesh(g,new THREE.MeshLambertMaterial({color:c}),n);m.count=0;m.frustumCulled=false;this.group.add(m);return m;};
-  this.body=mesh(new THREE.BoxGeometry(.55,.68,.3),'#60746b',32);this.heads=mesh(new THREE.BoxGeometry(.32,.35,.3),'#a8ad83',32);this.legs=mesh(new THREE.BoxGeometry(.19,.64,.2),'#3c4f50',64);
+  this.body=this.horde.body;this.heads=this.horde.heads;this.legs=this.horde.legs;this.group.add(this.horde.group);
   const ring=new THREE.Mesh(new THREE.TorusGeometry(5,.075,4,48),new THREE.MeshBasicMaterial({color:'#f6c66d',depthWrite:false}));ring.rotation.x=-Math.PI/2;ring.position.y=.18;this.marker.add(ring);
   const diamond=new THREE.Mesh(new THREE.OctahedronGeometry(.65,0),new THREE.MeshBasicMaterial({color:'#f6c66d'}));diamond.position.y=7;this.marker.add(diamond);
   const safe=new THREE.Mesh(new THREE.TorusGeometry(9,.1,4,48),new THREE.MeshBasicMaterial({color:'#9adeb5',depthWrite:false}));safe.rotation.x=-Math.PI/2;safe.position.y=.2;this.shelter.add(safe);
-  this.group.add(this.marker,this.shelter);
+  this.group.add(this.marker,this.shelter,...Object.values(this.cargo),...Object.values(this.roofCargo));for(const g of Object.values(this.cargo))g.scale.setScalar(1.7);if(typeof document!=='undefined'){this.depot=makeShelter();this.group.add(this.depot);}
   const rand=seeded(419);for(let i=0;i<this.drops.length;i+=3){this.drops[i]=(rand()-.5)*65;this.drops[i+1]=rand()*35;this.drops[i+2]=(rand()-.5)*65;}
   const g=new THREE.BufferGeometry();g.setAttribute('position',new THREE.BufferAttribute(this.drops,3));this.rain=new THREE.Points(g,new THREE.PointsMaterial({color:'#d8e6e3',size:.09,transparent:true,opacity:.5,depthWrite:false}));this.rain.frustumCulled=false;this.group.add(this.rain);
  }
- update(car:CarState,exp:Expedition|null,target:Point|null,dt:number,reduced:boolean){
-  this.time+=dt;const zombies=exp?.zombies.filter(z=>!z.dead).slice(0,32)??[];this.body.count=this.heads.count=zombies.length;this.legs.count=zombies.length*2;
-  for(let i=0;i<zombies.length;i++){const z=zombies[i],bob=Math.sin(this.time*5+i)*.04;this.dummy.rotation.set(0,z.heading,0);this.dummy.scale.setScalar(1);
-   this.dummy.position.set(z.x,1.02+bob,z.z);this.dummy.updateMatrix();this.body.setMatrixAt(i,this.dummy.matrix);
-   this.dummy.position.y=1.55+bob;this.dummy.updateMatrix();this.heads.setMatrixAt(i,this.dummy.matrix);
-   for(let j=0;j<2;j++){this.dummy.position.set(z.x+Math.cos(z.heading)*(j?-.17:.17),.35,z.z-Math.sin(z.heading)*(j?-.17:.17));this.dummy.rotation.x=Math.sin(this.time*5+i+j*Math.PI)*.15;this.dummy.updateMatrix();this.legs.setMatrixAt(i*2+j,this.dummy.matrix);this.dummy.rotation.x=0;}
-  }
-  this.body.instanceMatrix.needsUpdate=this.heads.instanceMatrix.needsUpdate=this.legs.instanceMatrix.needsUpdate=true;
-  this.marker.visible=!!target&&distance(target,[car.x,car.z])<280; if(target){this.marker.position.set(target[0],0,target[1]);this.marker.children[1].position.y=6.5+Math.sin(this.time*2)*.3;this.marker.children[1].rotation.y=this.time*.5;}
+ configure(world:CollisionWorld){this.world=world;this.propKey='';this.horde.clear();}
+ update(car:CarState,exp:Expedition|null,target:Point|null,dt:number,reduced:boolean,discovery=false){
+  this.time+=dt;const mission=exp?.data.mission;for(const [kind,g] of Object.entries(this.cargo)){g.visible=!!mission&&mission.kind===kind&&exp!.data.phase==='outbound'&&distance(mission.point,[car.x,car.z])<230;if(mission)g.position.set(mission.point[0],.13+(reduced?0:Math.sin(this.time*2)*.06),mission.point[1]);}for(const [kind,g] of Object.entries(this.roofCargo)){g.visible=!!mission&&mission.kind===kind&&exp!.data.phase==='return';g.rotation.y=-car.heading;g.position.set(car.x,1.88,car.z);}
+  if(this.depot){this.depot.visible=!!exp&&distance(exp.data.shelter,[car.x,car.z])<260;if(exp&&this.world&&this.propKey!==exp.data.shelter.join(',')){this.propKey=exp.data.shelter.join(',');const p=propAnchor(this.world,exp.data.shelter);this.depot.userData.available=!!p;if(p)this.depot.position.set(p[0],0,p[1]);}this.depot.visible&&=this.depot.userData.available===true;}
+ this.horde.update(exp?.zombies??[],car,dt,reduced);
+  this.marker.visible=!!target&&distance(target,[car.x,car.z])<280; if(target){this.marker.position.set(target[0],0,target[1]);this.marker.children[1].position.y=6.5+(reduced?0:Math.sin(this.time*2)*.3);this.marker.children[1].rotation.y=reduced?0:this.time*.5;for(const child of this.marker.children)((child as THREE.Mesh).material as THREE.MeshBasicMaterial).color.set(discovery?'#89d0db':exp?.data.phase==='outbound'&&mission?MISSION[mission.kind].color:'#9adeb5');}
   this.shelter.visible=!!exp&&distance(exp.data.shelter,[car.x,car.z])<280;if(exp)this.shelter.position.set(exp.data.shelter[0],0,exp.data.shelter[1]);
   this.rain.visible=!!this.weather&&this.weather.rain>.02&&!reduced; if(this.rain.visible){this.rain.position.set(car.x,0,car.z);for(let i=0;i<this.drops.length;i+=3){this.drops[i+1]-=dt*19;if(this.drops[i+1]<0)this.drops[i+1]+=35;}this.rain.geometry.getAttribute('position').needsUpdate=true;(this.rain.material as THREE.PointsMaterial).opacity=.2+this.weather!.rain*.4;}
  }

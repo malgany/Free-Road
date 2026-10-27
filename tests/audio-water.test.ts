@@ -26,6 +26,6 @@ test('água permite cruzar a margem, limita aceleração e ré a 18 km/h',()=>{
  assert.equal(reverse.speed,-5);
 });
 test('partículas têm pool fixo, pausa congela e expiração libera todas as instâncias',()=>{
- const p=new ImpactParticles();p.burst(1,2,0,1,15);assert.equal(p.ages.filter(a=>a===0).length,16);p.update(0);assert.equal(p.ages[0],0);
+ const p=new ImpactParticles();p.burst(1,2,0,1,15);assert.equal(p.ages.filter(a=>a===0).length,16);p.update(0);assert.equal(p.ages[0],0);const colorVersion=p.mesh.instanceColor!.version;p.burst(0,0,1,0,10,false,'#9c9e80');assert(p.mesh.instanceColor!.version>colorVersion);
  for(let i=0;i<100;i++)p.burst(0,0,1,0,30);assert.equal(p.mesh.count,64);p.update(.7);assert(p.ages.every(a=>a>=.65));p.clear();assert(p.ages.every(a=>a===2));
 });

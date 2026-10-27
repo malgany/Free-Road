@@ -1,4 +1,5 @@
 import './style.css';
+import {regionalStart} from './regional-start';
 import {AdventureUI} from './adventure-ui';
 import type {ExpeditionData} from './expedition';
 import {GameAudio} from './audio';
@@ -133,24 +134,16 @@ function setupCameraInput(){
   window.addEventListener('keydown',e=>{if(!started||paused||e.repeat||e.target instanceof HTMLInputElement||e.target instanceof HTMLSelectElement)return;if(e.code==='KeyC'){audio.cue('camera');scene.zoom.cycle();if(document.pointerLockElement&&scene.zoom.target!==0)document.exitPointerLock();}if(e.code==='KeyX'){scene.zoom.center();audio.cue('camera');}});
 }
 function loadingMessage(message:string){$('loading').innerHTML='<h2>Preparando o caminho…</h2><p id="loading-status" role="status"></p><button id="cancel-location">Cancelar</button>';$('loading-status').textContent=message;$('cancel-location').onclick=()=>cancelActiveLocation?.();}
+async function demoMap():Promise<GameMap>{const embedded=document.getElementById('embedded-davis');const value=embedded?JSON.parse(embedded.textContent!):await (await fetch('maps/davis.json')).json();validateMap(value);return value;}
 async function loadLocation(center?:Coordinates){
-  if(loading)return;stopStreaming();const fromSettings=!$('settings').hidden;const wasPlaying=started&&!paused;locationError('');if(wasPlaying)setPause(true);
-  const attempt=++locationAttempt,controller=new AbortController();
-  cancelActiveLocation=()=>{locationAttempt++;controller.abort();cancelActiveLocation=null;loading=false;$('loading').hidden=true;locationError('Busca cancelada.');if(fromSettings){$('settings').hidden=false;$('paused').hidden=true;}else if(wasPlaying)setPause(false);lastTime=performance.now();fixed.reset();};
-  controls.clear();loading=true;$('loading').hidden=false;loadingMessage(center?'Buscando as ruas…':'Permita o acesso à localização no navegador.');
-  try{
-    let accuracy:number|undefined;
-    if(!center){const found=await readCurrentPosition(navigator.geolocation);if(attempt!==locationAttempt)return;center=found.center;accuracy=found.accuracy;}
-    const {map:value,cached}=await mapCache.get(center,message=>loadingMessage(message),controller.signal);if(attempt!==locationAttempt)return;
-    await installMap(value,'current',controller.signal);if(attempt!==locationAttempt)return;currentMap=value;
-    const select=$<HTMLSelectElement>('map-select');if(!select.querySelector('option[value="current"]'))select.add(new Option('Minha região','current'));select.value='current';
-    loading=false;reset();adventure.mapChanged();buildMinimap();$('loading').hidden=true;$('settings').hidden=true;start();audio.cue('success');
-    showHint(accuracy!==undefined&&accuracy>1000?'Localização aproximada. Você pode informar coordenadas nos ajustes.':cached?'Região recuperada do cache local. Bom passeio!':'Pronto! O carro está em uma rua próxima.');
-  }catch(e){
-    if(attempt!==locationAttempt)return;
-    loading=false;$('loading').hidden=true;locationError(e instanceof Error?e.message:'Não foi possível carregar esta região.');
-    if(fromSettings){$('settings').hidden=false;$('paused').hidden=true;}else if(wasPlaying)setPause(false);
-  }finally{if(attempt===locationAttempt){cancelActiveLocation=null;lastTime=performance.now();fixed.reset();}}
+ if(loading)return;stopStreaming();locationError('');if(started)setPause(true);const attempt=++locationAttempt,controller=new AbortController();loading=true;controls.clear();$('loading').hidden=false;
+ const progress=(message:string)=>{if(controller.signal.aborted)return;loadingMessage(message);$('cancel-location').textContent='Entrar no demo agora';};
+ const enter=async(value:GameMap,demo:boolean)=>{await installMap(value,demo?'davis':'current');if(attempt!==locationAttempt)return;currentMap=demo?null:value;const select=$<HTMLSelectElement>('map-select');if(!demo&&!select.querySelector('option[value="current"]'))select.add(new Option('Minha região','current'));select.value=demo?'davis':'current';loading=false;reset();adventure.mapChanged();buildMinimap();$('loading').hidden=true;$('settings').hidden=true;start();audio.cue('start');if(demo)showHint('DEMO · Davis. Sua região não foi carregada nesta partida.');};
+ cancelActiveLocation=()=>{cancelActiveLocation=null;controller.abort();$('cancel-location').hidden=true;void demoMap().then(value=>enter(value,true)).catch(()=>{loading=false;locationError('O demo não carregou. Recarregue a página.');$('loading').hidden=true;});};
+ progress(center?'Preparando sua região…':'Permita a localização para criar sua expedição.');
+ try{const result=await regionalStart({position:async()=>center??(await readCurrentPosition(navigator.geolocation)).center,load:async(p,signal)=>(await mapCache.get(p,progress,signal)).map,demo:demoMap,signal:controller.signal});if(attempt!==locationAttempt||controller.signal.aborted)return;cancelActiveLocation=null;$('cancel-location').hidden=true;await enter(result.map,result.demo);}
+ catch(error){if(!controller.signal.aborted){loading=false;$('loading').hidden=true;locationError(error instanceof Error?error.message:'Não foi possível preparar a expedição.');}}
+ finally{if(attempt===locationAttempt){cancelActiveLocation=null;lastTime=performance.now();fixed.reset();}}
 }
 function buildMinimap(){
   const b=map.bounds,s=Math.min(750/(b.maxX-b.minX),750/(b.maxZ-b.minZ));minimapTransform={scale:s,x:384-(b.maxX+b.minX)/2*s,z:384-(b.maxZ+b.minZ)/2*s};
@@ -232,8 +225,8 @@ function toggleRecording(){
 }
 function toggleDebug(){debug=!debug;$('diagnostics').hidden=!debug;scene.debug.visible=debug;scene.debugEnabled=debug;$('debug-toggle').textContent=debug?'Ocultar diagnóstico (F3)':'Mostrar diagnóstico (F3)';}
 function showSettings(){$<HTMLSelectElement>('camera-select').value=scene.orthographic?'orthographic':scene.zoom.target===0?'cockpit':scene.zoom.target===CHASE_STOP?'chase':'perspective';if(started)setPause(true);$('paused').hidden=true;$('settings').hidden=false;$('close-settings').focus();}
-function closeSettings(){$('settings').hidden=true;if(started){setPause(true);$('options').focus();}else $('start').focus();}
-$('start').onclick=()=>void loadMap('davis').then(start).catch(()=>{});$('resume').onclick=()=>setPause(false);$('pause').onclick=()=>{if(!started)start();else setPause(!paused);};$('reset').onclick=()=>{if(adventure.expedition)adventure.open();else reset(true);};
+function closeSettings(){$('settings').hidden=true;if(started){setPause(true);$('options').focus();}else $('locate').focus();}
+$('start').onclick=()=>void loadMap('davis').then(start).catch(()=>{});$('resume').onclick=()=>setPause(false);$('pause').onclick=()=>{if(started)setPause(!paused);};$('reset').onclick=()=>{if(adventure.expedition)adventure.open();else reset(true);};
 function chooseTab(id:string){document.querySelectorAll<HTMLButtonElement>('[data-tab]').forEach(button=>{const active=button.dataset.tab===id;button.setAttribute('aria-selected',String(active));button.tabIndex=active?0:-1;$(button.getAttribute('aria-controls')!).hidden=!active;});}
 const tabButtons=Array.from(document.querySelectorAll<HTMLButtonElement>('[data-tab]'));tabButtons.forEach((button,i)=>{button.onclick=()=>chooseTab(button.dataset.tab!);button.onkeydown=e=>{if(e.key==='ArrowRight'||e.key==='ArrowLeft'){e.preventDefault();const next=tabButtons[(i+(e.key==='ArrowRight'?1:-1)+tabButtons.length)%tabButtons.length];chooseTab(next.dataset.tab!);audio.cue('click');next.focus();}};});
 $<HTMLInputElement>('steering-sensitivity').oninput=e=>{steeringSensitivity=Number((e.target as HTMLInputElement).value);$('steering-value').textContent=Math.round(steeringSensitivity*100)+'%';};

@@ -20,6 +20,7 @@ export class GameScene {
   collisionFx=new ImpactParticles(); life=new WorldLife(); private foliageFocus=new THREE.Vector2();private cameraRay=new THREE.Raycaster(); private cameraBlocks:THREE.Object3D[]=[];
   renderer:THREE.WebGLRenderer;scene=new THREE.Scene();perspective=new THREE.PerspectiveCamera(CAMERA.fov,1,0.04,1600);ortho=new THREE.OrthographicCamera(-70,70,70,-70,0.2,1600);
   get orthographic(){return this.zoom.orthographic;} set orthographic(value:boolean){this.zoom.select(value?'orthographic':'aerial');}
+  private impulse=0;private impulseTime=0;shock(strength:number){this.impulse=Math.max(this.impulse,Math.min(.085,strength*.003));this.impulseTime=0;}
   loadGeneration=0; private visibilityTick=0; private shadowTick=0;
   cameraHeading=0;cameraPosition=new THREE.Vector3();cameraReady=false;car=new THREE.Group();body=new THREE.Group();frontWheels:THREE.Group[]=[];wheels:THREE.Mesh[]=[];
   debug=new THREE.Group();worldGroup=new THREE.Group();light:THREE.DirectionalLight;gradient:THREE.DataTexture;reduced=false;map!:GameMap;world!:CollisionWorld;
@@ -32,10 +33,10 @@ export class GameScene {
   constructor(canvas:HTMLCanvasElement){
     this.renderer=new THREE.WebGLRenderer({canvas,antialias:true,alpha:false,powerPreference:'high-performance'});
     this.renderer.setPixelRatio(Math.min(devicePixelRatio,1.5));this.renderer.setClearColor('#e4dfc9');this.renderer.outputColorSpace=THREE.SRGBColorSpace;this.renderer.toneMapping=THREE.ACESFilmicToneMapping;this.renderer.toneMappingExposure=0.95;
-    this.renderer.shadowMap.enabled=true;this.renderer.shadowMap.type=THREE.PCFShadowMap;
+    this.renderer.shadowMap.enabled=true;this.renderer.shadowMap.type=THREE.PCFSoftShadowMap;
     this.gradient=new THREE.DataTexture(new Uint8Array([105,165,218,255]),4,1,THREE.RedFormat);this.gradient.minFilter=this.gradient.magFilter=THREE.NearestFilter;this.gradient.needsUpdate=true;
     this.scene.add(this.ambient);this.scene.fog=new THREE.Fog('#e4dfc9',140,320);
-    this.light=new THREE.DirectionalLight('#fff8ec',1.7);this.light.position.set(-60,120,45);this.light.castShadow=true;this.light.shadow.mapSize.set(1024,1024);
+    this.light=new THREE.DirectionalLight('#fff8ec',1.7);this.light.position.set(-60,120,45);this.light.castShadow=true;this.light.shadow.mapSize.set(2048,2048);
     Object.assign(this.light.shadow.camera,{left:-110,right:110,top:110,bottom:-110,near:1,far:300});this.light.shadow.bias=-0.0006;this.light.shadow.normalBias=0.25;this.light.shadow.autoUpdate=false;
     this.scene.add(this.light,this.light.target,this.worldGroup,this.car,this.debug);this.debug.visible=false;
     this.createCar();this.mergeStatic(this.body);this.mergeStatic(this.cockpit);this.mergeStatic(this.steering);
@@ -75,7 +76,7 @@ export class GameScene {
         const g=new THREE.PlaneGeometry(0.16,3);g.rotateX(-Math.PI/2);g.rotateY(ang);g.translate(x,0.065,z);markings.push(g);
       }
     }}batch(markings,new THREE.MeshBasicMaterial({color:'#ced3af'}));
-    const buildingColors=['#d5bb9d','#aebcba','#d2a58c','#bcc0a1','#d9cfb7','#b9abb0'];
+    const buildingColors=['#b8a78b','#9eada9','#b6987d','#a6ac8e','#c3bca4','#a39a9c'];
     const sectors=new Map<string,THREE.BufferGeometry[]>();
     for(const area of map.areas.filter(a=>a.kind==='building')){await checkpoint();const idx=[...area.id].reduce((h,c)=>(h*31+c.charCodeAt(0))>>>0,0)%buildingColors.length;
       for(const p of area.polygons){const g=extrude(p,area.height);g.computeBoundingBox();const center=g.boundingBox!.getCenter(new THREE.Vector3()),key=Math.floor(center.x/128)+','+Math.floor(center.z/128);
@@ -100,7 +101,7 @@ export class GameScene {
     await checkpoint();
     if(!canInstall())throw new Error('O próximo recorte ainda não tem passagem livre para o carro.');
     this.disposeGroup(this.worldGroup);this.disposeGroup(this.debug);this.scene.remove(this.worldGroup,this.debug);
-    this.worldGroup=group;this.debug=debugGroup;this.debug.visible=this.debugEnabled;this.scene.add(group,debugGroup);this.map=map;this.world=world;this.cameraBlocks=group.children.filter(m=>m.userData.occluder);group.updateMatrixWorld(true);this.light.shadow.needsUpdate=true;
+    this.worldGroup=group;this.debug=debugGroup;this.debug.visible=this.debugEnabled;this.scene.add(group,debugGroup);this.map=map;this.world=world;this.life?.configure(world);this.cameraBlocks=group.children.filter(m=>m.userData.occluder);group.updateMatrixWorld(true);this.light.shadow.needsUpdate=true;
     if(!preserve){this.cameraReady=false;this.clearEffects();}
     }catch(e){this.disposeGroup(group);this.disposeGroup(debugGroup);throw e;}
   }
@@ -108,7 +109,7 @@ export class GameScene {
   disposeGroup(group:THREE.Group){group.traverse(o=>{if(o instanceof THREE.Mesh||o instanceof THREE.Line){o.geometry.dispose();const materials=Array.isArray(o.material)?o.material:[o.material];materials.forEach(m=>m.dispose());}});group.clear();}
   mergeStatic(parent:THREE.Group){const groups=new Map<THREE.Material,THREE.Mesh[]>();for(const o of parent.children)if(o instanceof THREE.Mesh&&!Array.isArray(o.material)&&!o.material.transparent){const list=groups.get(o.material)??[];list.push(o);groups.set(o.material,list);}for(const [material,meshes] of groups){if(meshes.length<2)continue;const gs=meshes.map(m=>{m.updateMatrix();const g=m.geometry.clone().applyMatrix4(m.matrix);return g.index?g.toNonIndexed():g;});const merged=mergeGeometries(gs);gs.forEach(g=>g.dispose());if(!merged)continue;const mesh=new THREE.Mesh(merged,material);mesh.castShadow=true;parent.add(mesh);for(const old of meshes){parent.remove(old);old.geometry.dispose();}}}
   createCar(){
-    const amber=this.toon('#eeaa42'),dark=this.toon('#263e43'),cream=this.toon('#f8df9b'),black=this.toon('#182b30');
+    const amber=new THREE.MeshStandardMaterial({color:'#d89b45',roughness:.4,metalness:.25}),dark=new THREE.MeshStandardMaterial({color:'#26383a',roughness:.62,metalness:.35}),cream=new THREE.MeshStandardMaterial({color:'#d7c39a',roughness:.55,metalness:.2}),black=this.toon('#182b30');
     const box=(w:number,h:number,d:number,x:number,y:number,z:number,m:THREE.Material,parent:THREE.Group)=>{const mesh=new THREE.Mesh(new THREE.BoxGeometry(w,h,d),m);mesh.position.set(x,y,z);mesh.castShadow=true;parent.add(mesh);return mesh;};
     this.car.add(this.body);
     box(1.72,0.27,3.55,0,0.64,0,amber,this.body);box(1.68,0.18,3.62,0,0.48,0,dark,this.body);
@@ -208,7 +209,7 @@ export class GameScene {
     const exteriorAim=new THREE.Vector3(focus.x+fx*12,1,focus.z+fz*12);
     const yaw=s.heading+this.zoom.yaw,cp=Math.cos(this.zoom.pitch);
     const interiorAim=eye.clone().add(new THREE.Vector3(Math.sin(yaw)*cp,Math.sin(this.zoom.pitch),-Math.cos(yaw)*cp).multiplyScalar(20));
-    cam.lookAt(exteriorAim.lerp(interiorAim,blend));
+    cam.lookAt(exteriorAim.lerp(interiorAim,blend));if(running){this.impulseTime+=dt;this.impulse*=Math.exp(-9*dt);}if(!this.reduced&&!this.orthographic){cam.position.x+=Math.sin(this.impulseTime*75)*this.impulse*(1-aerial);cam.position.y+=Math.cos(this.impulseTime*61)*this.impulse*.6*(1-aerial);}
     this.glazing.visible=blend<0.5;
     const fov=45+(1-aerial)*20+blend*12;if(Math.abs(this.perspective.fov-fov)>0.01){this.perspective.fov=fov;this.perspective.near=blend>0.5?0.08:0.2;this.perspective.updateProjectionMatrix();}
     if(cam===this.ortho&&this.ortho.zoom!==1){this.ortho.zoom=1;this.ortho.updateProjectionMatrix();}

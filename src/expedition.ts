@@ -1,14 +1,14 @@
 import type {CarState,GameMap,Point} from './types';
 import {CollisionWorld} from './collision';
-import {distance,closest} from './geometry';
+import {distance,closest,clamp} from './geometry';
 import {roadSamples,accessPoint} from './pois';
 import {RoutePlanner,routeLength} from './routes';
 import {daylightAt} from './daylight';
 export type MissionKind='fuel'|'supplies'|'medical';
 export interface Destination {id:string;name:string;kind:MissionKind;point:Point;real:boolean;route:Point[]}
 export interface ExpeditionData {version:1;origin:GameMap['origin'];mapKey:string;shelter:Point;fuel:number;health:number;scrap:number;upgrade:number;completed:number;mission:Destination|null;phase:'choose'|'outbound'|'return';targets:Destination[];defeated:string[];car:{x:number;z:number;heading:number};dayTime:number}
-export interface Zombie {id:string;x:number;z:number;heading:number;dead:boolean;attack:number}
-export type GameEvent={kind:'collect'|'deliver'|'hurt'|'zombie'|'service'|'rescue';text:string;x?:number;z?:number;strength?:number};
+export interface Zombie {id:string;x:number;z:number;heading:number;dead:boolean;attack:number;variant?:number;awareness?:number;gait?:number;moving?:number}
+export type GameEvent={kind:'collect'|'deliver'|'hurt'|'zombie'|'service'|'rescue'|'alert';text:string;x?:number;z?:number;strength?:number;variant?:number;heading?:number;reward?:{scrap:number;fuel:number;health:number;kind:MissionKind}};
 export class Expedition {
  data:ExpeditionData;zombies:Zombie[]=[];private spawnTick=3;private noise=0;private lastDistance=0;private brain=0;private previousCar:Point|null=null;private spawnPoints:Point[]=[];private map!:GameMap;private world!:CollisionWorld;planner!:RoutePlanner;
  constructor(map:GameMap,world:CollisionWorld,mapKey:string,saved?:ExpeditionData){
@@ -23,15 +23,17 @@ export class Expedition {
   for(const p of [...pois,...fallback]){const point=accessPoint(p.point,map,world);if(!point||distance(point,this.data.shelter)<35||targets.some(t=>distance(t.point,point)<25))continue;const route=this.planner.route(this.data.shelter,point);if(!route||routeLength(route)>850)continue;targets.push({id:p.id,name:p.name,kind,point,real:!p.synthetic,route});break;}
  }return targets;}
  get target():Point{return this.data.phase==='outbound'&&this.data.mission?this.data.mission.point:this.data.shelter;}
+ get noiseLevel(){return clamp(Math.abs(this.lastSpeed)/28+(this.noise>0?.55:0),0,1);}
+ private lastSpeed=0;
  get maxHealth(){return 100+this.data.upgrade*15;}
  get immobilized(){return this.data.health<=0||this.data.fuel<=0;}
  atShelter(s:Pick<CarState,'x'|'z'|'speed'>){return distance([s.x,s.z],this.data.shelter)<16&&Math.abs(s.speed)<1;}
- choose(id:string){if(this.data.phase!=='choose')return false;const target=this.data.targets.find(t=>t.id===id);if(!target)return false;this.data.mission=structuredClone(target);this.data.phase='outbound';return true;}
+ choose(id:string,state?:CarState){if(this.data.phase!=='choose'&&!(this.data.phase==='outbound'&&state&&this.atShelter(state)))return false;const target=this.data.targets.find(t=>t.id===id);if(!target)return false;this.data.mission=structuredClone(target);this.data.phase='outbound';return true;}
  interact(s:CarState):GameEvent|null {if(Math.abs(s.speed)>1||distance([s.x,s.z],this.target)>14)return null;
   if(this.data.phase==='outbound'){this.data.phase='return';return {kind:'collect',text:'Carga recolhida. Leve-a de volta ao abrigo.'};}
-  if(this.data.phase==='return'&&this.data.mission){const kind=this.data.mission.kind,bonus=daylightAt(this.data.dayTime).daylight>.3?8:0;this.data.scrap+=20+bonus;this.data.completed++;
+  if(this.data.phase==='return'&&this.data.mission){const before={fuel:this.data.fuel,health:this.data.health,scrap:this.data.scrap};const kind=this.data.mission.kind,bonus=daylightAt(this.data.dayTime).daylight>.3?8:0;this.data.scrap+=20+bonus;this.data.completed++;
    if(kind==='fuel')this.data.fuel=Math.min(100,this.data.fuel+45);if(kind==='medical')this.data.health=Math.min(this.maxHealth,this.data.health+35);if(kind==='supplies')this.data.scrap+=12;
-   this.data.phase='choose';this.data.mission=null;return {kind:'deliver',text:`Entrega concluída · +${20+bonus+(kind==='supplies'?12:0)} peças${bonus?' · bônus diurno':''}`};}
+   this.data.phase='choose';this.data.mission=null;return {kind:'deliver',reward:{kind,scrap:this.data.scrap-before.scrap,fuel:this.data.fuel-before.fuel,health:this.data.health-before.health},text:`Entrega concluída · +${20+bonus+(kind==='supplies'?12:0)} peças${bonus?' · bônus diurno':''}`};}
   return null;
  }
  service(kind:'fuel'|'repair'|'upgrade',s:CarState):GameEvent|null {if(!this.atShelter(s))return null;const cost=kind==='upgrade'?40+this.data.upgrade*20:kind==='repair'?12:10;if(this.data.scrap<cost||(kind==='upgrade'&&this.data.upgrade>=3)||(kind==='fuel'&&this.data.fuel>=100)||(kind==='repair'&&this.data.health>=this.maxHealth))return null;
@@ -40,23 +42,23 @@ export class Expedition {
  }
  rescue(){this.data.fuel=Math.max(30,this.data.fuel);this.data.health=Math.max(50,this.data.health);this.data.scrap=Math.floor(this.data.scrap*.8);this.data.phase='choose';this.data.mission=null;this.zombies=[];return {kind:'rescue' as const,text:'Resgate concluído. A carga e 20% das peças ficaram pelo caminho.'};}
  impact(strength:number){if(strength<1.8)return;this.data.health=Math.max(0,this.data.health-strength*.45/(1+this.data.upgrade*.25));this.noise=4;}
- step(s:CarState,dt:number,dayTime:number):GameEvent[]{const events:GameEvent[]=[];this.data.dayTime=dayTime;this.data.car={x:s.x,z:s.z,heading:s.heading};const traveled=this.lastDistance<0?0:Math.max(0,s.distance-this.lastDistance);this.lastDistance=s.distance;
+ step(s:CarState,dt:number,dayTime:number):GameEvent[]{const events:GameEvent[]=[];this.lastSpeed=s.speed;this.data.dayTime=dayTime;this.data.car={x:s.x,z:s.z,heading:s.heading};const traveled=this.lastDistance<0?0:Math.max(0,s.distance-this.lastDistance);this.lastDistance=s.distance;
   this.data.fuel=Math.max(0,this.data.fuel-traveled*.023/(1+this.data.upgrade*.12)-dt*.0005);this.noise=Math.max(0,this.noise-dt);this.spawnTick+=dt;
   if(this.spawnTick>2){this.spawnTick=0;this.populate(s,dayTime);}
   const car:Point=[s.x,s.z],old=this.previousCar??car;this.previousCar=car;
-  for(const z of this.zombies){if(z.dead)continue;const d=distance([z.x,z.z],closest([z.x,z.z],old,car));if(d<2.3&&Math.abs(s.speed)>3){z.dead=true;this.data.defeated.push(z.id);this.data.defeated=this.data.defeated.slice(-384);this.data.health=Math.max(0,this.data.health-2/(1+this.data.upgrade*.3));s.vx*=.86;s.vz*=.86;this.noise=3;events.push({kind:'zombie',text:'Impacto · o barulho atrai infectados',x:z.x,z:z.z,strength:Math.abs(s.speed)});}}
+  for(const z of this.zombies){if(z.dead)continue;const d=distance([z.x,z.z],closest([z.x,z.z],old,car));if(d<2.3&&Math.abs(s.speed)>3){z.dead=true;this.data.defeated.push(z.id);this.data.defeated=this.data.defeated.slice(-384);this.data.health=Math.max(0,this.data.health-2/(1+this.data.upgrade*.3));s.vx*=.86;s.vz*=.86;this.noise=3;events.push({kind:'zombie',text:'Impacto · o barulho atrai infectados',x:z.x,z:z.z,strength:Math.abs(s.speed),variant:z.variant??0,heading:Math.atan2(s.vx,s.vz)});}}
   this.brain+=dt;if(this.brain<.1)return events;const tick=this.brain;this.brain=0;const night=1-daylightAt(dayTime).daylight;
   const noiseRadius=25+Math.min(75,Math.abs(s.speed)*2)+(this.noise>0?65:0)+night*25;
-  for(const z of this.zombies){if(z.dead)continue;z.attack-=tick;const d=distance([z.x,z.z],[s.x,s.z]);if(d>190)continue;
+  for(const z of this.zombies){if(z.dead)continue;z.attack-=tick;const d=distance([z.x,z.z],[s.x,s.z]);if(d>190)continue;z.moving=0;const before=z.awareness??0;z.awareness=clamp(before+(d<noiseRadius?tick*1.8:-tick*.35),0,1);if(before<.65&&z.awareness>=.65&&d<55)events.push({kind:'alert',text:'Infectados ouviram o motor.',x:z.x,z:z.z,strength:1-d/55});
    
    if(distance([s.x,s.z],this.data.shelter)<36)continue;
    if(d<2.8&&z.attack<=0){z.attack=1.4;this.data.health=Math.max(0,this.data.health-1.5);events.push({kind:'hurt',text:'Infectados alcançaram o carro. Afaste-se!'});}
-   if(d<noiseRadius){const angle=Math.atan2(s.x-z.x,s.z-z.z),step=(.8+night*.9)*tick;for(const offset of [0,.75,-.75,1.4,-1.4]){const nx=z.x+Math.sin(angle+offset)*step,nz=z.z+Math.cos(angle+offset)*step;if(distance([nx,nz],this.data.shelter)<32||this.world.surfaceAt([nx,nz])==='water'||this.world.hit(nx,nz,0))continue;z.x=nx;z.z=nz;z.heading=angle+offset;break;}}
+   if((z.awareness??0)>.18){let ax=s.x-z.x,az=s.z-z.z;for(const other of this.zombies){if(other===z||other.dead)continue;const near=Math.hypot(z.x-other.x,z.z-other.z);if(near>0&&near<1.5){ax+=(z.x-other.x)/near*4;az+=(z.z-other.z)/near*4;}}const angle=Math.atan2(ax,az),pace=.65+night*.9+(z.awareness??0)*.3,step=pace*tick;for(const offset of [0,.75,-.75,1.4,-1.4]){const nx=z.x+Math.sin(angle+offset)*step,nz=z.z+Math.cos(angle+offset)*step;if(distance([nx,nz],this.data.shelter)<32||this.world.surfaceAt([nx,nz])==='water'||this.world.hit(nx,nz,0))continue;z.x=nx;z.z=nz;z.heading=angle+offset;z.gait=(z.gait??0)+pace*tick*4.2;z.moving=1;break;}}
   }return events;
  }
  private populate(s:CarState,time:number){const limit=daylightAt(time).daylight<.4?28:18;this.zombies=this.zombies.filter(z=>!z.dead&&distance([z.x,z.z],[s.x,s.z])<200);if(this.zombies.length>=limit)return;
   const samples=this.spawnPoints;const ids=new Set(this.zombies.map(z=>z.id));
-  for(const p of samples){const d=distance(p,[s.x,s.z]);if(d<45||d>160||distance(p,this.data.shelter)<45)continue;const id=`${this.map.origin.lat.toFixed(4)}/${this.map.origin.lon.toFixed(4)}/${Math.round(p[0]/15)}/${Math.round(p[1]/15)}`;if(ids.has(id)||this.data.defeated.includes(id))continue;ids.add(id);this.zombies.push({id,x:p[0],z:p[1],heading:0,dead:false,attack:1});if(this.zombies.length>=limit)break;}
+  for(const p of samples){const d=distance(p,[s.x,s.z]);if(d<45||d>160||distance(p,this.data.shelter)<45)continue;const id=`${this.map.origin.lat.toFixed(4)}/${this.map.origin.lon.toFixed(4)}/${Math.round(p[0]/15)}/${Math.round(p[1]/15)}`;if(ids.has(id)||this.data.defeated.includes(id))continue;ids.add(id);this.zombies.push({id,x:p[0],z:p[1],heading:0,dead:false,attack:1,variant:Math.abs(Math.round(p[0]+p[1]))%3,awareness:0,gait:Math.abs(p[0])%6,moving:0});if(this.zombies.length>=limit)break;}
  }
 }
 export function validExpedition(value:unknown):value is ExpeditionData {

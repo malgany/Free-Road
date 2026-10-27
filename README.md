@@ -1,16 +1,16 @@
 # Free Road
 
-Jogo de direção livre em Three.js e TypeScript: explore ruas do OpenStreetMap, entre na cabine e acompanhe o ciclo de dia e noite. Interface em português, sem conta e sem backend de jogo.
+Jogo de direção e sobrevivência em Three.js e TypeScript: em **Última rota**, saia do abrigo, procure recursos nas ruas do OpenStreetMap e volte com a carga. Interface em português, sem conta e sem backend de jogo.
 
 ## Jogar
 
 [**Jogar no navegador**](https://malgany.github.io/Free-Road/) · [Repositório](https://github.com/malgany/Free-Road)
 
-![Free Road em terceira pessoa](docs/previa-atual.png)
+![Entrega de recursos no abrigo](docs/entrega-1.3.png)
 
 Abra **Jogar.html** no Chrome, Edge ou Brave, ou use a publicação no GitHub Pages. O mapa de exemplo de Davis e a pista de teste funcionam offline. **Jogar na minha região** pede permissão de localização e consulta o OpenStreetMap; também é possível informar coordenadas em **Pausa → Configurações → Mapa**.
 
-Se a localização não funcionar ao abrir o arquivo diretamente, use coordenadas ou o servidor local. O navegador precisa de WebGL 2. Novas regiões exigem internet ou um recorte válido no cache.
+O botão principal sempre tenta sua região. Permissão negada, GPS indisponível, falha de mapa ou espera superior a 30 segundos levam automaticamente ao **DEMO · DAVIS**, identificado no HUD. Durante a busca, **Entrar no demo agora** permite pular a espera. O navegador precisa de WebGL 2. Novas regiões exigem internet ou um recorte válido no cache.
 
 ## Controles
 
@@ -42,32 +42,32 @@ Na pausa, **Configurações** fica entre **Continuar** e **Reposicionar carro**.
 - Na primeira entrada, teclas WASD, C, scroll e Esc aparecem por 2 segundos sem bloquear controles; uma pequena preferência no localStorage evita repetições.
 - Terrenos em níveis discretos: neutro 0; grama 1,2 cm; mata 2,4 cm; terra 3,6 cm; água 4 cm. Ruas preservadas a partir de 5 cm, sem alterar física vertical.
 - Na mata, rastro de 2,05 m de largura; marcas de pneus na grama, terra e chão neutro; no asfalto, ao frear ou fazer curvas fechadas. Limite de 2.048 segmentos e 48 partículas de poeira.
-- Interior geométrico com volante móvel, painel, bancos e janelas. Espelhos são decorativos. Sem trânsito civil ou multiplayer. Infectados e missões pertencem apenas ao modo opcional Última rota.
+- Interior geométrico com volante móvel, painel, bancos e janelas. Espelhos são decorativos. Sem trânsito civil ou multiplayer. Última rota é o único modo de jogo; a pista de teste permanece nas configurações para diagnóstico.
 
-## Última rota: expedição opcional
+## Última rota
 
-A tela inicial permite **Exploração livre**, sem combustível, dano ou inimigos, e **Última rota**, uma expedição leve de sobrevivência. O abrigo fica no ponto inicial. Três tipos de saída — combustível, mantimentos e cuidados — usam POIs do OpenStreetMap quando houver acesso pela rede viária. Na ausência desses dados, o jogo oferece pontos claramente identificados como ilustrativos. Nomes e categorias reais não implicam reprodução visual dos estabelecimentos.
+A tela inicial oferece **Jogar na minha região** e, havendo progresso, **Continuar expedição**. Novas partidas começam às **06:00**, com uma mensagem do abrigo e uma primeira missão de mantimentos selecionada quando existe uma rota válida. O abrigo fica no ponto inicial. Três tipos de saída — combustível, mantimentos e cuidados — usam POIs do OpenStreetMap quando houver acesso pela rede viária. Na ausência desses dados, o jogo oferece pontos claramente identificados como ilustrativos. Nomes e categorias reais não implicam reprodução visual dos estabelecimentos.
 
-Escolha uma missão, siga a rota do minimapa, pare a menos de 14 m e use **E** para recolher a carga. Volte e use E para entregar. Cada entrega rende 20 peças, com +8 durante o dia. Combustível recupera 45% do tanque; cuidados recuperam 35 de integridade; mantimentos dão 12 peças extras. A oficina oferece reabastecimento, reparo e três reforços de resistência/autonomia. Não há temporizador de missão nem morte definitiva: o resgate volta ao abrigo, abandona a carga e desconta 20% das peças.
+O HUD acompanha **Localizar → Carregar → Entregar**. Siga a rota âmbar, pare a menos de 14 m e use **E**: carregar leva 1,6 s; entregar, 1,1 s. Mover o carro interrompe a operação. As caixas, galões e maleta possuem modelos próprios; a carga aparece no teto durante o retorno. A entrega apresenta os recursos realmente recebidos. **Esc → Abrigo e expedição → Missões** permite trocar a saída antes de recolher, desde que você esteja parado no abrigo. Cada entrega rende 20 peças, com +8 durante o dia. Combustível recupera 45% do tanque; cuidados recuperam 35 de integridade; mantimentos dão 12 peças extras. A oficina oferece reabastecimento, reparo e três reforços de resistência/autonomia. Não há temporizador de missão nem morte definitiva: o resgate volta ao abrigo, abandona a carga e desconta 20% das peças.
 
-Infectados simples reagem à proximidade, velocidade e colisões; a noite aumenta alcance, velocidade e população. O limite é 18 de dia / 28 à noite, em três malhas instanciadas. A zona de 32 m do abrigo é protegida. Colisões com infectados reduzem integridade e velocidade, com partículas sem gore. A IA contorna obstáculos próximos; não é um sistema de perseguição por toda a cidade.
+Infectados com três variações visuais, braços articulados e caminhada irregular reagem à proximidade, velocidade e colisões; a noite aumenta alcance, velocidade e população. O limite é 18 de dia / 28 à noite, em seis malhas instanciadas para todos os atores. Até 12 quedas ficam visíveis por sete segundos; não há acúmulo de corpos. A zona de 32 m do abrigo é protegida. Colisões com infectados reduzem integridade e velocidade, com partículas sem gore. A IA contorna obstáculos próximos; não é um sistema de perseguição por toda a cidade.
 
-O progresso usa um único registro IndexedDB, até 64 KiB, salvo a cada 8 segundos enquanto joga, nos eventos importantes e ao ocultar/sair da página. **Continuar expedição salva** recupera carro, horário, recursos, missão e melhorias. Não é sincronizado entre dispositivos. Uma nova expedição substitui o slot anterior. O resgate pode precisar recuperar o mapa do abrigo; se a rede falhar, a tentativa não aplica penalidade. A exploração livre não sobrescreve a expedição.
+O progresso usa um único registro IndexedDB, até 64 KiB, salvo a cada 8 segundos enquanto joga, nos eventos importantes e ao ocultar/sair da página. **Continuar expedição salva** recupera carro, horário, recursos, missão e melhorias. Não é sincronizado entre dispositivos. Uma nova expedição substitui o slot anterior. O resgate pode precisar recuperar o mapa do abrigo; se a rede falhar, a tentativa não aplica penalidade. As descobertas opcionais não substituem nem cancelam a missão.
 
 ## Cidade, navegação e serviços opcionais
 
 - Terrenos são recortados e unidos por prioridade: rua, água, terra, mata, grama; a base neutra preenche apenas o restante. Isso elimina a sobreposição entre classes e entre polígonos duplicados. Calçadas ilustrativas ocupam apenas espaço restante junto a algumas ruas. As alturas discretas e a geometria das ruas permanecem.
 - Fachadas recebem janelas e pequenos volumes de telhado, em lotes por material/setor; árvores decorativas são limitadas a 65 por recorte, espaçadas e com transparência pontilhada perto do carro para liberar a visão. A câmera de perseguição recua até o espaço livre quando um prédio intercepta sua visão.
-- **Pausa → Lugares próximos** permite marcar um POI na exploração livre. A rota usa a rede de ruas do trecho carregado. Fora dessa rede, o HUD informa distância em linha reta; não finge ter uma rota. O marcador na borda do minimapa indica a direção do destino.
-- **Configurações → Mapa → Clima e descobertas reais** contém recursos opcionais, desligados por padrão. Open-Meteo recebe coordenadas virtuais aproximadas para mostrar temperatura, nebulosidade, chuva e neblina. O ciclo de dia/noite permanece fictício. Chuva usa 240 partículas e um nó de ruído reutilizado; efeitos reduzidos ocultam as gotas.
-- A consulta manual à Wikipédia busca até oito artigos com coordenadas em 1 km; abre o artigo original e permite marcar acessos dentro do recorte na exploração livre. Cobertura e disponibilidade dependem do serviço. Erros não bloqueiam a partida.
+- **Esc → Abrigo e expedição → Cidade** reúne clima, artigos e locais nomeados próximos. Uma descoberta fica azul no minimapa, junto da missão âmbar. Entre missões, ela pode receber a rota principal. A rota usa a rede de ruas do trecho carregado. Fora dessa rede, o HUD informa distância em linha reta; não finge ter uma rota. O marcador na borda do minimapa indica a direção do destino.
+- **Abrigo e expedição → Cidade** contém recursos opcionais, desligados por padrão. Open-Meteo recebe coordenadas virtuais aproximadas para mostrar temperatura, nebulosidade, chuva e neblina. O ciclo de dia/noite permanece fictício. Chuva usa 240 partículas e um nó de ruído reutilizado; efeitos reduzidos ocultam as gotas.
+- A consulta manual à Wikipédia busca até oito artigos com coordenadas em 1 km; abre o artigo original e permite marcar acessos dentro do recorte em Última rota. Cobertura e disponibilidade dependem do serviço. Erros não bloqueiam a partida.
 - Clima e descobertas usam cache de sessão de até seis respostas / 32 KiB por 15 minutos; não acumulam consultas por quadro. Documentação: [Open-Meteo](https://open-meteo.com/en/docs) e [MediaWiki Geosearch](https://www.mediawiki.org/wiki/API:Geosearch). Clima por Open-Meteo, CC BY 4.0; artigos permanecem na Wikipédia, com suas licenças.
 
 ## Áudio e impactos
 
 Sons sintetizados localmente com Tone.js 15.1.22, sem arquivos de áudio externos: motor com rotação e marchas simuladas; rodagem diferente em asfalto, terra, grama, mata e água; atrito ao virar/frear; sinal de ré; impacto proporcional à colisão e partículas limitadas a 64 instâncias. Não há música de fundo. Curvas leves geram atrito discreto; frenagens geram um ruído mais forte.
 
-Botões, menus, abas, ajustes, câmera, reset e respostas de localização têm feedback. Missão, coleta, entrega, oficina, resgate, dano, impacto com infectado, descoberta e mudança de clima têm sinais próprios; chuva também tem ambiente contínuo. O áudio é desbloqueado pelo primeiro clique/tecla, conforme as regras do navegador. Configurações → Som inclui volume, mudo, teste e medidor de saída. Preferências pequenas persistem no localStorage. Pausa corta o carro e mantém os sinais do menu; aba oculta silencia tudo. Falha de áudio não impede jogar. Sons rápidos têm limite de frequência.
+Botões, menus, abas, ajustes, câmera, reset e respostas de localização têm feedback. Missão, coleta, entrega, oficina, resgate, dano, impacto com infectado (pancada grave, ruído de contato e voz sintetizada), alerta de infectado, carregamento, descoberta e mudança de clima têm sinais próprios; chuva também tem ambiente contínuo. O áudio é desbloqueado pelo primeiro clique/tecla, conforme as regras do navegador. Configurações → Som inclui volume, mudo, teste e medidor de saída. Preferências pequenas persistem no localStorage. Pausa corta o carro e mantém os sinais do menu; aba oculta silencia tudo. Falha de áudio não impede jogar. Sons rápidos têm limite de frequência. Missões e entregas usam acordes curtos; impactos fortes têm vibração discreta da câmera, desligada com efeitos reduzidos.
 
 AGENTS.md torna a revisão do feedback sonoro obrigatória em alterações futuras. src/audio-model.ts contém as regras testáveis; src/audio.ts mantém um conjunto fixo de nós Tone.js; src/impact-particles.ts gerencia o pool de partículas.
 
@@ -80,6 +80,10 @@ O cache IndexedDB guarda até 32 mapas derivados e aproximadamente 32 MB de JSON
 A busca e a preparação geográfica rodam em Web Worker. A criação das malhas é dividida em pequenos lotes; a janela anterior continua ativa até a nova ficar pronta. Antes da troca, a posição do carro precisa estar livre. A janela antiga libera suas malhas e materiais; setores distantes da janela atual deixam de ser desenhados. O mapa inteiro do mundo nunca é acumulado na GPU.
 
 A rede ainda pode atrasar: se não houver dados, a borda atual permanece sólida e uma nova tentativa ocorre em 30 s. O terreno é plano; túneis e cruzamentos de vias em altitudes sobrepostas são omitidos nos recortes dinâmicos. Não use o jogo como navegação real.
+
+## Revisão 1.3
+
+Seis ciclos de implementação e verificação estão registrados em [iterations-1.3.md](docs/iterations-1.3.md), com resultados e limites. Os modelos são estilizados e procedurais; esta versão não pretende reproduzir a cidade nem o acabamento fotorealista de uma produção AAA.
 
 ## Desenvolvimento
 

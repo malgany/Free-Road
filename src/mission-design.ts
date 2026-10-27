@@ -1,0 +1,9 @@
+import type {MissionKind} from './expedition';
+export const MISSION={
+ supplies:{label:'MANTIMENTOS',title:'Uma cidade para manter viva',item:'3 caixas de mantimentos',short:'Mantimentos',color:'#e8b66b',radio:'O estoque está baixo. Busque as caixas e traga tudo para casa.',reward:'20 peças + 12 extras',svg:'<path d="m3 7 9-4 9 4-9 4zM3 7v10l9 4 9-4V7M12 11v10M7 5l10 4v5"/>'},
+ fuel:{label:'COMBUSTÍVEL',title:'Mais uma chance de partir',item:'2 galões de combustível',short:'Combustível',color:'#dd9d66',radio:'Precisamos manter os motores vivos. Recolha os galões sinalizados.',reward:'20 peças + até 45% de tanque',svg:'<path d="M7 5V3h7l3 4v14H4V7h13M8 3v4M7 11l7 7m0-7-7 7M17 5l3-2 2 3-3 2"/>'},
+ medical:{label:'CUIDADOS',title:'Ninguém fica para trás',item:'1 maleta de cuidados',short:'Cuidados',color:'#87beb1',radio:'A equipe precisa de cuidados. Encontre a maleta e retorne ao abrigo.',reward:'20 peças + até 35 de integridade',svg:'<rect x="3" y="7" width="18" height="14" rx="2"/><path d="M8 7V3h8v4m-4 4v6m-3-3h6"/>'}
+} satisfies Record<MissionKind,{label:string;title:string;item:string;short:string;color:string;radio:string;reward:string;svg:string}>;
+export const missionIcon=(kind:MissionKind)=>`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${MISSION[kind].svg}</svg>`;
+/** Coherent interaction timer shared by keyboard and touch. */
+export class CargoAction {progress=0;active=false;private phase='';begin(phase:string){if(this.active||phase==='choose')return false;this.active=true;this.phase=phase;this.progress=0;return true;}cancel(){this.active=false;this.progress=0;}step(dt:number,eligible:boolean,phase:string){if(!this.active)return false;if(!eligible||phase!==this.phase){this.cancel();return false;}this.progress=Math.min(1,this.progress+dt/(phase==='outbound'?1.6:1.1));if(this.progress===1){this.active=false;return true;}return false;}}
