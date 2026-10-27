@@ -7,6 +7,7 @@ import {CollisionWorld} from './collision';
 import {CameraZoom,CHASE_STOP} from './camera';
 import {daylightAt} from './daylight';
 
+export const TERRAIN_HEIGHT={neutral:0,grass:0.012,forest:0.024,dirt:0.036,water:0.04};
 const TRAILS=2048,TRAIL_LIFE=90;
 
 function shapeOf(p:Polygon){const shape=new THREE.Shape(p[0].map(([x,z])=>new THREE.Vector2(x,-z)));for(const h of p.slice(1))shape.holes.push(new THREE.Path(h.map(([x,z])=>new THREE.Vector2(x,-z))));return shape;}
@@ -21,7 +22,7 @@ export class GameScene {
   zoom=new CameraZoom(); dayTime=0; phase='Dia'; headlightPower=0;
   ambient=new THREE.HemisphereLight('#fff8eb','#6b7974',1.1);cockpit=new THREE.Group();steering=new THREE.Group();glazing=new THREE.Group();
   headlamps:THREE.SpotLight[]=[];headMaterials:THREE.MeshStandardMaterial[]=[];reverseMaterials:THREE.MeshStandardMaterial[]=[];tailMaterials:THREE.MeshStandardMaterial[]=[];
-  rearLight=new THREE.PointLight('#fff3dc',0,6);sky=new THREE.Color();lastTrail:Point[]|null=null;
+  rearLight=new THREE.PointLight('#ff2921',0,6);sky=new THREE.Color();lastTrail:Point[]|null=null;
   trail:THREE.InstancedMesh;dust:THREE.InstancedMesh;trailAges=new Float32Array(TRAILS).fill(100);dustAges=new Float32Array(48).fill(100);trailIndex=0;dustIndex=0;effectTick=0;matrix=new THREE.Object3D();
   dustPositions=Array.from({length:48},()=>new THREE.Vector3());
   constructor(canvas:HTMLCanvasElement){
@@ -53,9 +54,9 @@ export class GameScene {
     try{
 
     const b=map.bounds,w=b.maxX-b.minX,d=b.maxZ-b.minZ;
-    const ground=new THREE.Mesh(new THREE.BoxGeometry(w+2,2,d+2),this.toon('#d7cfb5'));ground.position.set((b.maxX+b.minX)/2,-1.03,(b.maxZ+b.minZ)/2);ground.receiveShadow=true;group.add(ground);
+    const ground=new THREE.Mesh(new THREE.BoxGeometry(w+2,2,d+2),this.toon('#d7cfb5'));ground.position.set((b.maxX+b.minX)/2,-1,(b.maxZ+b.minZ)/2);ground.receiveShadow=true;group.add(ground);
     const palettes={forest:'#526b43',grass:'#a9b98d',dirt:'#ceb087',water:'#76b6b2'};
-    for(const kind of ['forest','grass','dirt','water'] as const)batch(map.areas.filter(a=>a.kind===kind).flatMap(a=>a.polygons.map(p=>flat(p,kind==='water'?0.028:0.012))),this.toon(palettes[kind]));
+    for(const kind of ['forest','grass','dirt','water'] as const)batch(map.areas.filter(a=>a.kind===kind).flatMap(a=>a.polygons.map(p=>flat(p,TERRAIN_HEIGHT[kind]))),this.toon(palettes[kind]));
     batch(map.corridors.flatMap(c=>c.polygons.map(p=>flat(p,0.05+c.layer*0.002))),this.toon('#536764'));
     batch(map.roads.filter(r=>r.surface==='dirt').flatMap(r=>r.points.slice(1).map((p,i)=>flat(capsule(r.points[i],p,r.width),0.06))),this.toon('#ceb087'));
     // Road centre markings; omit crowded junction tips. Style is synthetic, not a lane survey.
@@ -139,7 +140,7 @@ export class GameScene {
     for(const x of [-0.58,0.58]){
       const head=new THREE.MeshStandardMaterial({color:'#f4edd1',emissive:'#ffebbb',emissiveIntensity:0.1});this.headMaterials.push(head);box(0.34,0.2,0.06,x,0.85,-1.8,head,this.body);
       const tail=new THREE.MeshStandardMaterial({color:'#a92e24',emissive:'#ff2716',emissiveIntensity:0.1});this.tailMaterials.push(tail);box(0.28,0.14,0.06,x,0.86,1.8,tail,this.body);
-      const reverse=new THREE.MeshStandardMaterial({color:'#bdbdb4',emissive:'#ffffff',emissiveIntensity:0});this.reverseMaterials.push(reverse);box(0.15,0.09,0.065,x*0.6,0.86,1.8,reverse,this.body);
+      const reverse=new THREE.MeshStandardMaterial({color:'#b52c25',emissive:'#ff2921',emissiveIntensity:0});this.reverseMaterials.push(reverse);box(0.15,0.09,0.065,x*0.6,0.86,1.8,reverse,this.body);
       const lamp=new THREE.SpotLight('#fff1cf',0,80,0.45,0.55,1.5);lamp.position.set(x,0.88,-1.84);lamp.target.position.set(x,0.15,-35);lamp.castShadow=true;lamp.shadow.mapSize.set(512,512);lamp.shadow.bias=-0.0002;lamp.shadow.normalBias=0.03;this.car.add(lamp,lamp.target);this.headlamps.push(lamp);
     }
     this.rearLight.position.set(0,0.8,2.4);this.car.add(this.rearLight);
@@ -158,12 +159,15 @@ export class GameScene {
     const rear:Point[]=[-1,1].map(side=>[s.x+Math.cos(s.heading)*side*0.76-Math.sin(s.heading),s.z+Math.sin(s.heading)*side*0.76+Math.cos(s.heading)]);
     if(Math.abs(s.speed)>0.6&&this.lastTrail){
       for(let side=0;side<2;side++){
-        const p=rear[side],last=this.lastTrail[side],len=distance(p,last),surface=this.world.surfaceAt(p);
+        let p=rear[side],last=this.lastTrail[side];
+        const forest=this.world.surfaceAt([s.x,s.z])==='forest';
+        if(forest){if(side===1)continue;p=[(rear[0][0]+rear[1][0])/2,(rear[0][1]+rear[1][1])/2];last=[(this.lastTrail[0][0]+this.lastTrail[1][0])/2,(this.lastTrail[0][1]+this.lastTrail[1][1])/2];}
+        const len=distance(p,last),surface=forest?'forest':this.world.surfaceAt(p);
         const offroad=['grass','forest','dirt','neutral'].includes(surface);
         if(len>0.05&&len<12&&(offroad||(surface==='asphalt'&&Math.abs(s.speed)>6&&(Math.abs(s.steer)>0.14||braking)))){
           const i=this.trailIndex++%TRAILS;this.trailAges[i]=0;
-          this.matrix.position.set((p[0]+last[0])/2,0.085,(p[1]+last[1])/2);this.matrix.rotation.set(0,Math.atan2(p[0]-last[0],p[1]-last[1]),0);this.matrix.scale.set(offroad?1.35:1,1,len+0.06);this.matrix.updateMatrix();this.trail.setMatrixAt(i,this.matrix.matrix);
-          this.trail.setColorAt(i,new THREE.Color(surface==='grass'||surface==='forest'?'#536343':offroad?'#806443':'#202f2d'));
+          this.matrix.position.set((p[0]+last[0])/2,0.085,(p[1]+last[1])/2);this.matrix.rotation.set(0,Math.atan2(p[0]-last[0],p[1]-last[1]),0);this.matrix.scale.set(forest?2.05/0.22:offroad?1.35:1,1,len+0.06);this.matrix.updateMatrix();this.trail.setMatrixAt(i,this.matrix.matrix);
+          this.trail.setColorAt(i,new THREE.Color(surface==='forest'?'#879562':surface==='grass'?'#536343':offroad?'#806443':'#202f2d'));
         }
       }
     }

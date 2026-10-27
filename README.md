@@ -17,7 +17,7 @@ Se a localização não funcionar ao abrir o arquivo diretamente, use coordenada
 | Atalho | Ação |
 | --- | --- |
 | W / ↑ | Acelerar |
-| S / ↓ | Frear, depois dar ré; acender luzes brancas |
+| S / ↓ | Frear, depois dar ré; acender luzes vermelhas |
 | A D / ← → | Esterçar |
 | Espaço | Frear sem engatar ré |
 | C | Aérea → terceira pessoa → cabine → ortográfica |
@@ -35,18 +35,20 @@ Na pausa, **Configurações** fica entre **Continuar** e **Voltar ao início**. 
 
 ## Mundo e iluminação
 
-- Velocidade máxima de 199 km/h; ré limitada a 32,4 km/h. Física arcade a 60 Hz, colisões e interpolação entre quadros.
+- Aceleração de 5,5 m/s²: cerca de 10 s até 199 km/h, o dobro do tempo anterior. Limites: asfalto 199; neutro/terra 99,5; grama 79,6; mata 59,7 km/h. Ao entrar em terreno lento, desacelera progressivamente. Velocidade máxima de 199 km/h; ré limitada a 32,4 km/h. Física arcade a 60 Hz, colisões e interpolação entre quadros.
 - Ruas, construções e terrenos acompanham as informações OSM disponíveis. Floresta, mata e vegetação arbustiva usam verde escuro. Nos recortes com menos de três edifícios OSM, ruas urbanas podem receber até 48 casas ilustrativas. Elas são identificadas como sintéticas nos dados e não representam imóveis reais; não ocupam áreas mapeadas de água, vegetação ou vias.
 - O nome da rua aparece discretamente sobre o minimapa. Quando há nomes de bairro/região nos dados, a entrada é anunciada no topo. Ausência de dados não é substituída por um bairro inventado.
 - Relógio: dia das 06:00 às 18:00 (10 min reais), entardecer até 20:00 (90 s), noite até 04:00 (5 min), amanhecer até 06:00 (90 s). Pausa congela o ciclo. Faróis acendem automaticamente.
-- Marcas de pneus na grama, mata, terra e chão neutro; no asfalto, ao frear ou fazer curvas fechadas. Limite de 2.048 segmentos e 48 partículas de poeira.
+- Na primeira entrada, teclas WASD, C, scroll e Esc aparecem por 2 segundos sem bloquear controles; uma pequena preferência no localStorage evita repetições.
+- Terrenos em níveis discretos: neutro 0; grama 1,2 cm; mata 2,4 cm; terra 3,6 cm; água 4 cm. Ruas preservadas a partir de 5 cm, sem alterar física vertical.
+- Na mata, rastro de 2,05 m de largura; marcas de pneus na grama, terra e chão neutro; no asfalto, ao frear ou fazer curvas fechadas. Limite de 2.048 segmentos e 48 partículas de poeira.
 - Interior geométrico com volante móvel, painel, bancos e janelas. Espelhos são decorativos. Sem trânsito, pedestres, missões ou multiplayer.
 
 ## Streaming e privacidade
 
 O GPS é lido somente na ação inicial solicitada. A posição do carro virtual antecipa novas áreas; a API do OpenStreetMap recebe os limites geográficos consultados. Os recortes começam em 700 m e podem diminuir para 450/250 m em regiões densas. As consultas usam centros quantizados a 0,001 grau.
 
-O cache IndexedDB guarda até 64 mapas derivados, com validade de 30 dias; há até oito em memória. Inclui a origem geográfica. **Configurações → Mapa → Limpar mapas salvos** limpa o cache. Ele pertence ao navegador/origem: arquivo local, outra porta de localhost e GitHub Pages podem ter caches separados. Se o armazenamento persistente for negado, o cache funciona apenas na sessão.
+O cache IndexedDB guarda até 32 mapas derivados e aproximadamente 32 MB de JSON (o armazenamento interno do navegador pode acrescentar overhead), com validade de 30 dias; há até quatro em memória. Inclui a origem geográfica. **Configurações → Mapa → Limpar mapas salvos** limpa o cache. Ele pertence ao navegador/origem: arquivo local, outra porta de localhost e GitHub Pages podem ter caches separados. Se o armazenamento persistente for negado, o cache funciona apenas na sessão.
 
 A busca e a preparação geográfica rodam em Web Worker. A criação das malhas é dividida em pequenos lotes; a janela anterior continua ativa até a nova ficar pronta. Antes da troca, a posição do carro precisa estar livre. A janela antiga libera suas malhas e materiais; setores distantes da janela atual deixam de ser desenhados. O mapa inteiro do mundo nunca é acumulado na GPU.
 

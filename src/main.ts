@@ -27,6 +27,7 @@ document.querySelector('#app')!.innerHTML=`
   <div class="hud" aria-label="Instrumentos"><div><div class="speed" id="speed">00</div><div class="unit">KM/H</div></div><div class="gear" id="gear">N</div><div class="trip"><span id="distance">0,00 km</span><small id="surface">Asfalto</small></div></div>
   <aside class="map-widget" aria-label="Minimapa"><canvas id="minimap" width="320" height="320"></canvas></aside><a class="map-credit" href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">© OpenStreetMap contributors</a>
   <time id="game-clock" class="game-clock" aria-label="Horário do jogo" title="Entardecer 18:00 · Noite 20:00">06:00</time><div id="street-name" class="street-name" aria-live="polite"></div><div id="region-name" class="region-name" role="status"></div><div id="stream-status" class="stream-status" role="status" hidden></div>
+  <aside id="first-controls" class="first-controls" aria-label="Controles rápidos" hidden><div><div class="key-grid"><kbd>W<small>↑</small></kbd><kbd>A<small>←</small></kbd><kbd>S<small>↓</small></kbd><kbd>D<small>→</small></kbd></div><span>Dirigir</span></div><div><kbd>C</kbd><span>Mudar câmera</span></div><div><svg viewBox="0 0 40 52" aria-hidden="true"><rect x="9" y="5" width="22" height="40" rx="11"/><path d="M20 10v12m-4-9 4-4 4 4m-8 6 4 4 4-4"/></svg><span>Scroll · zoom</span></div><div><kbd>Esc</kbd><span>Pausar</span></div></aside>
   <div id="hint" class="hint" role="status" aria-live="polite"></div>
   <div class="pause-banner" id="paused" hidden><h2>Pausa no caminho.</h2><p>Quando quiser, é só continuar.</p><button id="resume" class="start">Continuar <span>↗</span></button><button id="options" class="secondary-start">Configurações</button><button id="reset" class="secondary-start">Voltar ao início <span>↺</span></button></div>
   ${settingsMarkup}
@@ -51,7 +52,7 @@ const mapLayer=document.createElement('canvas');mapLayer.width=768;mapLayer.heig
 let minimapTransform={scale:1,x:0,z:0};let path:Point[]=[];let lastPath=0;
 function showHint(message:string){$('hint').textContent=message;$('hint').classList.add('show');window.setTimeout(()=>$('hint').classList.remove('show'),3000);}
 function setPause(value:boolean){if(!started||loading)return;paused=value;controls.enabled=!value;controls.clear();fixed.reset();lastTime=performance.now();$('paused').hidden=!value;$('pause').innerHTML=value?playIcon:pauseIcon;if(value&&document.pointerLockElement)document.exitPointerLock();$('pause').setAttribute('aria-label',value?'Continuar':'Pausar');}
-function start(){started=true;$('intro').hidden=true;setPause(false);$('view').focus();}
+function start(){if(!started){let seen=false;try{seen=localStorage.getItem('free-road-controls-seen')==='1';localStorage.setItem('free-road-controls-seen','1');}catch{}if(!seen){$('first-controls').hidden=false;window.setTimeout(()=>$('first-controls').hidden=true,2000);}}started=true;$('intro').hidden=true;setPause(false);$('view').focus();}
 function reset(notify=false){if(!map||loading)return;state=initialState(map.spawn);previous={...state};safe={...state};fixed.reset();scene.cameraReady=false;scene.clearEffects();path=[];if(run){run=null;$('report-summary').textContent='Verificação interrompida pelo reset.';}if(notify)showHint('De volta ao ponto de partida.');}
 function teleport(x:number,z:number,heading:number){state=initialState({x,z,heading});previous={...state};safe={...state};scene.cameraReady=false;}
 async function loadMap(key:string){
@@ -159,7 +160,7 @@ function refreshUI(dt:number){
   const surface=world.surfaceAt([state.x,state.z]);$('surface').textContent=({forest:'Mata',asphalt:'Asfalto',grass:'Grama',dirt:'Terra',neutral:'Chão neutro',water:'Água'})[surface];
   if(state.distance-lastPath>3){path.push([state.x,state.z]);if(path.length>400)path.shift();lastPath=state.distance;}if(state.distance<lastPath)lastPath=0;
   $('game-clock').textContent=gameClock(scene.dayTime);
-  $('cache-info').textContent=mapCache.store instanceof BrowserMapStore&&mapCache.store.persistent?'Cache local ativo · até 64 regiões · 30 dias':'Cache da sessão ativo; persistência depende do navegador.';
+  $('cache-info').textContent=mapCache.store instanceof BrowserMapStore&&mapCache.store.persistent?'Cache local ativo · até 32 regiões · ~32 MB · 30 dias':'Cache da sessão ativo; persistência depende do navegador.';
   if(!streamBusy&&performance.now()>streamNoticeUntil)$('stream-status').hidden=true;
   if(started&&!paused&&!run)void streamMap();
   if(debug){const r=nearestRoad(),fps=frameTimes.length?1000/(frameTimes.reduce((a,b)=>a+b,0)/frameTimes.length):0;

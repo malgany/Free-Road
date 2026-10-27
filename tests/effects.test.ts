@@ -20,3 +20,10 @@ test('asfalto só marca ao frear ou esterçar, e reset remove marcas antigas',()
   const scene=effectsOnly(),s=initialState({x:-65,z:38,heading:0});s.speed=10;scene.effects(s,0.1,false);s.z-=1;scene.effects(s,0.1,false);assert.equal(scene.trailIndex,0);
   s.z-=1;scene.effects(s,0.1,true);assert.equal(scene.trailIndex,2);scene.clearEffects();assert.equal(scene.trailAges.filter(n=>n<90).length,0);assert.equal(scene.lastTrail,null);
 });
+test('mata recebe faixa da largura do carro, sem duplicar marcas de rodas',()=>{
+ const scene=effectsOnly();scene.world.surfaceAt=()=> 'forest';
+ const s=initialState({x:35,z:30,heading:0});s.speed=10;scene.effects(s,.1,false);s.z-=1;scene.effects(s,.1,false);
+ assert.equal(scene.trailIndex,1);const m=new THREE.Matrix4();scene.trail.getMatrixAt(0,m);
+ const p=new THREE.Vector3(),q=new THREE.Quaternion(),scale=new THREE.Vector3();m.decompose(p,q,scale);
+ assert(Math.abs(scale.x*.22-2.05)<.001);assert.equal(p.x,35);
+});

@@ -1,6 +1,14 @@
 import type {GameMap} from './types';
 import {getLocalMap,type Coordinates,type Progress} from './location';
-import {validateMap} from './validation';
+export const CACHE_BYTES=32*1024*1024,CACHE_REGIONS=32;
+export function cacheEvictions(rows:CachedMap[],now=Date.now()){
+  let bytes=0,count=0;const remove:string[]=[];
+  for(const row of [...rows].sort((a,b)=>b.savedAt-a.savedAt)){
+    const size=new TextEncoder().encode(JSON.stringify(row)).byteLength;
+    if(now-row.savedAt>30*24*3600*1000||count>=CACHE_REGIONS||bytes+size>CACHE_BYTES)remove.push(row.key);
+    else{bytes+=size;count++;}
+  }return remove;
+}
 
 export interface CachedMap {key:string;savedAt:number;map:GameMap}
 export interface MapStore {get(key:string):Promise<CachedMap|undefined>;put(entry:CachedMap):Promise<void>;clear():Promise<void>}
@@ -14,7 +22,13 @@ export class BrowserMapStore implements MapStore {
         if(typeof indexedDB==='undefined'){resolve(null);return;}
         const req=indexedDB.open('rua-livre-mapas',1);
         req.onupgradeneeded=()=>req.result.createObjectStore('regions',{keyPath:'key'});
-        req.onsuccess=()=>{this.persistent=true;resolve(req.result);};
+        req.onsuccess=()=>{
+          const db=req.result;this.persistent=true;
+          // Enforce the current budget on old caches too, before the first read.
+          const tx=db.transaction('regions','readwrite'),store=tx.objectStore('regions'),all=store.getAll();
+          all.onsuccess=()=>{for(const key of cacheEvictions(all.result))store.delete(key);};
+          tx.oncomplete=()=>resolve(db);tx.onerror=tx.onabort=()=>{this.persistent=false;resolve(null);};
+        };
         req.onerror=req.onblocked=()=>resolve(null);
       }catch{resolve(null);}
     });
@@ -25,7 +39,7 @@ export class BrowserMapStore implements MapStore {
   async put(entry:CachedMap){const db=await this.open();if(!db)return;
     await new Promise<void>((resolve,reject)=>{
       const tx=db.transaction('regions','readwrite'),store=tx.objectStore('regions');store.put(entry);
-      const all=store.getAll();all.onsuccess=()=>{const rows=(all.result as CachedMap[]).sort((a,b)=>b.savedAt-a.savedAt);for(const [index,old] of rows.entries())if(index>=64||Date.now()-old.savedAt>30*24*3600*1000)store.delete(old.key);};
+      const all=store.getAll();all.onsuccess=()=>{for(const key of cacheEvictions(all.result))store.delete(key);};
       tx.oncomplete=()=>resolve();tx.onerror=tx.onabort=()=>{this.persistent=false;reject(tx.error);};
     });
   }
@@ -52,6 +66,6 @@ export class MapCache {
     try{await this.store.put(entry);}catch{/* Quota/private mode: session cache still works. */}
     signal?.throwIfAborted();return {map:structuredClone(map),cached:false};
   }
-  private remember(entry:CachedMap){this.memory.delete(entry.key);this.memory.set(entry.key,entry);while(this.memory.size>8)this.memory.delete(this.memory.keys().next().value!);}
+  private remember(entry:CachedMap){this.memory.delete(entry.key);this.memory.set(entry.key,entry);while(this.memory.size>4)this.memory.delete(this.memory.keys().next().value!);}
   async clear(){this.memory.clear();await this.store.clear();}
 }
