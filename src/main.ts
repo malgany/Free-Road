@@ -1,3 +1,6 @@
+import {FootPlayer,footBlocked} from './on-foot';
+import {FootView} from './on-foot-view';
+import {RouteArrow} from './route-arrow';
 import './style.css';
 import {regionalStart} from './regional-start';
 import {AdventureUI} from './adventure-ui';
@@ -51,17 +54,18 @@ let lastRegion='',streamNoticeUntil=0,streamError='';
 let locationAttempt=0,cancelActiveLocation:(()=>void)|null=null;
 let report:Record<string,unknown>|null=null,frameTimes:number[]=[],recorder:MediaRecorder|null=null,chunks:Blob[]=[];
 let run:null|{kind:'benchmark'|'acceptance';elapsed:number;frames:number[];stage:number;events:string[];contacts:Set<string>;positions:Point[]}=null;
-const fixed=new FixedLoop();
-const adventure=new AdventureUI({map:()=>map,world:()=>world,state:()=>state,scene:()=>scene,mapKey:()=>mapKey,audio,pause:setPause,playing:()=>started&&!paused&&!loading,started:()=>started,toast:showHint,teleport:(p,h)=>teleport(p[0],p[1],h),restore:restoreExpedition,start,home:()=>{setPause(true);started=false;paused=true;controls.enabled=false;$('paused').hidden=true;$('intro').hidden=false;$('settings').hidden=true;}});
-const controls=new Controls(reason=>{if(reason==='key'&&adventure.openDialog){audio.cue('back');adventure.close(false);return;}if(reason==='key'&&!$('settings').hidden){audio.cue('back');closeSettings();return;}if(reason==='key')audio.cue(paused?'back':'menu');setPause(reason==='key'?!paused:true);},()=>{if(started&&!loading&&$('settings').hidden){if(adventure.expedition)adventure.open();else reset(true);}});
+const fixed=new FixedLoop();const walker=new FootPlayer();let footView:FootView,routeArrow:RouteArrow,firing=false,footFallback=false,stepSound=0,hitFlash=0;
+function actorState(){return walker.active?walker.proxy(state):state;}
+const adventure=new AdventureUI({inventory:()=>({weapon:walker.weapon,ammo:walker.ammo,reserve:walker.reserve,health:walker.health,collected:[...footView.collected]}),restoreInventory:value=>{Object.assign(walker,value??{weapon:'pistol',ammo:12,reserve:48,health:100});walker.reloadTime=0;walker.cooldown=0;footView.resetLoot(value?.collected);},map:()=>map,world:()=>world,state:actorState,parkedState:()=>state,onFoot:()=>walker.active,interactOther:footInteract,footHurt:()=>{walker.health=Math.max(0,walker.health-8);hitFlash=.2;if(walker.health<=0){walker.enter();walker.health=100;audio.cue("rescue");showHint("Socorrido junto ao carro.");releaseFoot();}},scene:()=>scene,mapKey:()=>mapKey,audio,pause:setPause,playing:()=>started&&!paused&&!loading,started:()=>started,toast:showHint,teleport:(p,h)=>teleport(p[0],p[1],h),restore:restoreExpedition,start,home:()=>{walker.enter();releaseFoot();setPause(true);started=false;paused=true;controls.enabled=false;$('paused').hidden=true;$('intro').hidden=false;$('settings').hidden=true;}});
+const controls=new Controls(reason=>{if(reason==='key'&&adventure.openDialog){audio.cue('back');adventure.close(false);return;}if(reason==='key'&&!$('settings').hidden){audio.cue('back');closeSettings();return;}if(reason==='key')audio.cue(paused?'back':'menu');setPause(reason==='key'?!paused:true);},()=>{if(walker.active){if(started&&!paused&&walker.reload())audio.cue('reload');return;}if(started&&!loading&&$('settings').hidden){if(adventure.expedition)adventure.open();else reset(true);}});
 const context=$<HTMLCanvasElement>('minimap').getContext('2d')!;
 const mapLayer=document.createElement('canvas');mapLayer.width=768;mapLayer.height=768;const mc=mapLayer.getContext('2d')!;
 let minimapTransform={scale:1,x:0,z:0};let path:Point[]=[];let lastPath=0;
 function showHint(message:string){$('hint').textContent=message;$('hint').classList.add('show');window.setTimeout(()=>$('hint').classList.remove('show'),3000);}
-function setPause(value:boolean){if(!started||loading)return;paused=value;controls.enabled=!value;controls.clear();fixed.reset();lastTime=performance.now();$('paused').hidden=!value;$('pause').innerHTML=value?playIcon:pauseIcon;if(value)audio.silence();if(value&&document.pointerLockElement)document.exitPointerLock();$('pause').setAttribute('aria-label',value?'Continuar':'Pausar');}
+function setPause(value:boolean){if(!started||loading)return;paused=value;firing=false;controls.enabled=!value;controls.clear();fixed.reset();lastTime=performance.now();$('paused').hidden=!value;$('pause').innerHTML=value?playIcon:pauseIcon;if(value)audio.silence();if(value&&document.pointerLockElement)document.exitPointerLock();$('pause').setAttribute('aria-label',value?'Continuar':'Pausar');}
 function start(){if(!started){let seen=false;try{seen=localStorage.getItem('free-road-controls-seen')==='1';localStorage.setItem('free-road-controls-seen','1');}catch{}if(!seen){$('first-controls').hidden=false;window.setTimeout(()=>$('first-controls').hidden=true,2000);}}started=true;$('intro').hidden=true;setPause(false);$('view').focus();adventure.start();}
-function reset(notify=false){if(!map||loading)return;if(notify)audio.cue('reset');state=initialState(map.spawn);previous={...state};safe={...state};fixed.reset();scene.cameraReady=false;scene.clearEffects();path=[];if(run){run=null;$('report-summary').textContent='Verificação interrompida pelo reset.';}if(notify)showHint('De volta ao ponto de partida.');}
-function teleport(x:number,z:number,heading:number){state=initialState({x,z,heading});previous={...state};safe={...state};scene.cameraReady=false;}
+function reset(notify=false){if(!map||loading)return;walker.enter();releaseFoot();if(notify)audio.cue('reset');state=initialState(map.spawn);previous={...state};safe={...state};fixed.reset();scene.cameraReady=false;scene.clearEffects();path=[];if(run){run=null;$('report-summary').textContent='Verificação interrompida pelo reset.';}if(notify)showHint('De volta ao ponto de partida.');}
+function teleport(x:number,z:number,heading:number){walker.enter();releaseFoot();state=initialState({x,z,heading});previous={...state};safe={...state};scene.cameraReady=false;}
 async function loadMap(key:string){
   stopStreaming();audio.silence();loading=true;controls.clear();$('loading').hidden=false;
   try{
@@ -91,7 +95,7 @@ function locationError(message:string){if(message)audio.cue('error');for(const i
 function stopStreaming(){streamGeneration++;streamController?.abort();streamController=null;streamBusy=false;streamNext=0;$('stream-status').hidden=true;}
 async function streamMap(){
   if(streamBusy||loading||mapKey==='test'||performance.now()<streamNext)return;
-  const center=expansionTarget(map,state);if(!center||regionKey(center)===lastRegion)return;
+  const center=expansionTarget(map,actorState());if(!center||regionKey(center)===lastRegion)return;
   const generation=streamGeneration,controller=new AbortController();streamController=controller;streamBusy=true;
   const status=$('stream-status');status.hidden=false;status.textContent='Carregando ruas adiante…';
   try{
@@ -99,8 +103,8 @@ async function streamMap(){
     if(generation!==streamGeneration)return;
     const expanded=rebaseMap(result.map,map.origin),nextWorld=new CollisionWorld(expanded);
     // Never transplant the car into an obstacle or a window it has already passed.
-    if(nextWorld.hit(state.x,state.z,state.heading))throw new Error('Aguardando um trecho com passagem livre…');
-    await scene.load(expanded,nextWorld,true,controller.signal,()=>!nextWorld.hit(state.x,state.z,state.heading));if(generation!==streamGeneration)return;map=expanded;world=nextWorld;
+    if(walker.active?footBlocked(nextWorld,walker.x,walker.z):nextWorld.hit(state.x,state.z,state.heading))throw new Error('Aguardando um trecho com passagem livre…');
+    await scene.load(expanded,nextWorld,true,controller.signal,()=>walker.active?!footBlocked(nextWorld,walker.x,walker.z):!nextWorld.hit(state.x,state.z,state.heading));if(generation!==streamGeneration)return;map=expanded;world=nextWorld;
     if(mapKey==='current')currentMap=map;
     lastRegion=regionKey(result.map.origin);streamError='';adventure.mapChanged(true);buildMinimap();
     status.textContent=result.cached?'Ruas recuperadas do cache':'Novas ruas prontas';
@@ -115,13 +119,13 @@ async function streamMap(){
 function setupCameraInput(){
   const canvas=$<HTMLCanvasElement>('view');let wasLocked=false;
   canvas.addEventListener('wheel',e=>{
-    if(!started||paused||loading)return;e.preventDefault();
+    if(!started||paused||loading||walker.active)return;e.preventDefault();
     const delta=e.deltaY*(e.deltaMode===1?16:e.deltaMode===2?innerHeight:1);
     scene.zoom.wheel(delta,performance.now());audio.cue('camera');
     if(scene.zoom.target>0&&document.pointerLockElement===canvas)document.exitPointerLock();
   },{passive:false});
   window.addEventListener('mousemove',e=>{
-    if(paused||scene.zoom.mode!=='cockpit')return;
+    if(paused)return;if(walker.active){if(document.pointerLockElement===canvas||(footFallback&&(e.buttons&2)))walker.look(e.movementX,e.movementY);return;}if(scene.zoom.mode!=='cockpit')return;
     if(document.pointerLockElement===canvas)scene.zoom.look(e.movementX,e.movementY);
     else if(e.target===canvas){const b=canvas.getBoundingClientRect();scene.zoom.yaw=((e.clientX-b.left)/b.width-0.5)*3.1;scene.zoom.pitch=(0.5-(e.clientY-b.top)/b.height)*0.95;}
   });
@@ -129,9 +133,9 @@ function setupCameraInput(){
     if(paused||scene.zoom.mode!=='cockpit')return;
     try{Promise.resolve(canvas.requestPointerLock()).then(()=>{if(document.pointerLockElement===canvas)scene.zoom.center();audio.cue('camera');}).catch(()=>showHint('Mova o cursor sobre o cenário para olhar ao redor.'));}catch{showHint('Mova o cursor sobre o cenário para olhar ao redor.');}
   });
-  canvas.addEventListener('dblclick',()=>{scene.zoom.center();audio.cue('camera');});
-  document.addEventListener('pointerlockchange',()=>{const locked=document.pointerLockElement===canvas;if(wasLocked&&!locked&&scene.zoom.target===0&&!paused)setPause(true);wasLocked=locked;});
-  window.addEventListener('keydown',e=>{if(!started||paused||e.repeat||e.target instanceof HTMLInputElement||e.target instanceof HTMLSelectElement)return;if(e.code==='KeyC'){audio.cue('camera');scene.zoom.cycle();if(document.pointerLockElement&&scene.zoom.target!==0)document.exitPointerLock();}if(e.code==='KeyX'){scene.zoom.center();audio.cue('camera');}});
+  canvas.addEventListener('dblclick',()=>{if(walker.active)return;scene.zoom.center();audio.cue('camera');});
+  document.addEventListener('pointerlockchange',()=>{const locked=document.pointerLockElement===canvas;document.body.classList.toggle('fps-locked',locked&&walker.active);if(wasLocked&&!locked&&(walker.active||scene.zoom.target===0)&&!paused)setPause(true);wasLocked=locked;});
+  window.addEventListener('keydown',e=>{if(!started||paused||e.repeat||e.target instanceof HTMLInputElement||e.target instanceof HTMLSelectElement)return;if(walker.active)return;if(e.code==='KeyC'){audio.cue('camera');scene.zoom.cycle();if(document.pointerLockElement&&scene.zoom.target!==0)document.exitPointerLock();}if(e.code==='KeyX'){scene.zoom.center();audio.cue('camera');}});
 }
 function loadingMessage(message:string){$('loading').innerHTML='<h2>Preparando o caminho…</h2><p id="loading-status" role="status"></p><button id="cancel-location">Cancelar</button>';$('loading-status').textContent=message;$('cancel-location').onclick=()=>cancelActiveLocation?.();}
 async function demoMap():Promise<GameMap>{const embedded=document.getElementById('embedded-davis');const value=embedded?JSON.parse(embedded.textContent!):await (await fetch('maps/davis.json')).json();validateMap(value);return value;}
@@ -164,9 +168,9 @@ function updateMinimap(car=state){
   context.rotate(-car.heading);context.translate(0,-139);context.rotate(car.heading);context.font='bold 18px Segoe UI';context.textAlign='center';context.fillStyle='#203d40';context.strokeStyle='#fff4ce';context.lineWidth=3;context.strokeText('N',0,6);context.fillText('N',0,6);context.restore();
 }
 function nearestRoad(){return world.index.nearest([state.x,state.z]).road;}
-function refreshNames(now:number){const closest=world.index.nearest([state.x,state.z]),name=closest.road&&closest.distance<closest.road.width/2+7&&closest.road.name!=='Via de serviço'?closest.road.name:'';
+function refreshNames(now:number){const actor=actorState(),closest=world.index.nearest([actor.x,actor.z]),name=closest.road&&closest.distance<closest.road.width/2+7&&closest.road.name!=='Via de serviço'?closest.road.name:'';
   if(streetName.update(name,now)){$('street-name').textContent=name;$('street-name').classList.toggle('visible',!!name);}
-  if(regionName.update(nearbyRegion(map,[state.x,state.z]),now)&&regionName.value){const el=$('region-name');el.textContent=regionName.value;el.classList.remove('announce');void el.offsetWidth;el.classList.add('announce');}
+  if(regionName.update(nearbyRegion(map,[actor.x,actor.z]),now)&&regionName.value){const el=$('region-name');el.textContent=regionName.value;el.classList.remove('announce');void el.offsetWidth;el.classList.add('announce');}
 }
 function refreshUI(dt:number){
   $('audio-status').textContent=audio.failed?'Áudio indisponível neste navegador; você pode continuar jogando.':audio.ready?(audio.muted?'Som silenciado.':'Som ativo. Ajuste o volume para seu conforto.'):'O áudio inicia ao interagir com o jogo.';
@@ -254,22 +258,33 @@ function frame(now:number){
   if(started&&!paused){
     if(run){run.frames.push(realDt*1000);}
     alpha=fixed.advance(realDt,()=>{previous={...state};if(run){input=runInput();run.elapsed+=FIXED_STEP;}
-      if(adventure.immobilized)input={...EMPTY_INPUT,brake:true};stepCar(state,input,FIXED_STEP,world,steeringSensitivity);adventure.step(FIXED_STEP);
+      if(walker.active){state.vx=state.vz=state.speed=0;state.impact=undefined;const event=walker.step(input,controls.keys.has('ControlLeft')||controls.keys.has('ControlRight'),FIXED_STEP,world,state);if(event.jump)audio.cue('jump');if(event.land)audio.cue('land');if(firing)shoot();}else{if(adventure.immobilized)input={...EMPTY_INPUT,brake:true};stepCar(state,input,FIXED_STEP,world,steeringSensitivity);}adventure.step(FIXED_STEP);
       const impact=state.impact;if(impact&&impactGate.accept(impact.strength,now/1000)){audio.impact(impact.strength);adventure.impact(impact.strength);scene.collisionFx.burst(impact.x,impact.z,impact.nx,impact.nz,impact.strength,scene.reduced);}
-      if(Number.isFinite(state.x)&&Number.isFinite(state.z)&&!world.hit(state.x,state.z,state.heading))safe={...state};else{state={...safe,vx:0,vz:0,speed:0};showHint('Posição segura recuperada.');}
+      if(walker.active){}else if(Number.isFinite(state.x)&&Number.isFinite(state.z)&&!world.hit(state.x,state.z,state.heading))safe={...state};else{state={...safe,vx:0,vz:0,speed:0};showHint('Posição segura recuperada.');}
       if(run&&state.contact)run.contacts.add(state.contact);
     });
     if(run&&run.elapsed>=60)finishRun();
   }
   const rendered={...state,x:previous.x+(state.x-previous.x)*alpha,z:previous.z+(state.z-previous.z)*alpha,heading:lerpAngle(previous.heading,state.heading,alpha)};
   const braking=!!input.brake||(input.backward&&state.speed>0)||(input.forward&&state.speed<0);
-  audio.update(state,input,world.surfaceAt([state.x,state.z]),started&&!paused,dt);
-  adventure.render(dt);scene.render(rendered,dt,braking,input.backward||state.speed<-0.2,started&&!paused);frameTimes.push(realDt*1000);if(frameTimes.length>90)frameTimes.shift();
-  minimapTime+=dt;if(minimapTime>=1/30){updateMinimap(rendered);minimapTime=0;}nameTime+=dt;if(nameTime>=0.3){refreshNames(now);nameTime=0;}
+  audio.update(state,input,world.surfaceAt([state.x,state.z]),started&&!paused,dt,walker.active);
+  footView.configure(world);footView.update(walker,dt,started&&!paused,scene.reduced);refreshFoot(dt);
+  adventure.render(dt);scene.render(rendered,dt,!walker.active&&braking,!walker.active&&(input.backward||state.speed<-0.2),started&&!paused);if(started&&!paused)routeArrow.render(scene.renderer,actorState(),adventure.target,adventure.targetColor);frameTimes.push(realDt*1000);if(frameTimes.length>90)frameTimes.shift();
+  minimapTime+=dt;if(minimapTime>=1/30){updateMinimap(walker.active?actorState():rendered);minimapTime=0;}nameTime+=dt;if(nameTime>=0.3){refreshNames(now);nameTime=0;}
   uiTime+=dt;if(uiTime>=0.1){refreshUI(dt);uiTime=0;}
 }
+
+$('app').insertAdjacentHTML('beforeend','<div id="crosshair" hidden><i></i><b></b></div><div id="foot-hud" hidden></div><button id="foot-prompt" hidden></button><div id="hit-vignette" hidden></div>');
+$('panel-shortcuts').insertAdjacentHTML('beforeend','<p><kbd>F</kbd> Sair do carro · <kbd>E</kbd> Entrar / recolher</p><p>A pé: WASD · mouse para olhar · clique esquerdo para atirar · Espaço para pular · Ctrl para agachar · R para recarregar.</p>');
+async function lockFoot(){if(!walker.active||paused)return;try{await $('view').requestPointerLock();footFallback=false;}catch(error){footFallback=true;console.warn('Pointer Lock:',error instanceof Error?error.message:String(error));showHint('Segure o botão direito para olhar. Esquerdo atira.');}}
+function releaseFoot(){firing=false;document.body.classList.toggle('on-foot',walker.active);if(!walker.active&&document.pointerLockElement)document.exitPointerLock();if(scene)scene.cameraReady=false;}
+function footInteract(){if(!walker.active)return false;if(footView.collect(walker)){audio.cue('pickup');showHint('Carabina · munição recolhida');return true;}if(walker.nearCar(state,world)){walker.enter();releaseFoot();audio.cue('door');return true;}return false;}
+function shoot(){if(!walker.fire()){if(walker.ammo===0&&walker.cooldown===0){walker.cooldown=.4;audio.cue('empty');}return;}audio.shot();footView.shot();const direction:[number,number,number]=[Math.sin(walker.heading)*Math.cos(walker.pitch),Math.sin(walker.pitch),-Math.cos(walker.heading)*Math.cos(walker.pitch)];const wall=footView.wallDistance([...scene.worldGroup.children,scene.car],walker),hit=adventure.expedition?.shoot([walker.x,walker.y+walker.eye,walker.z],direction,wall);if(hit){hitFlash=.12;if(hit.dead){scene.life.horde.hit(hit.zombie.x,hit.zombie.z,5,walker.heading,hit.zombie.variant);audio.bodyHit(4);void adventure.save();}scene.collisionFx.burst(hit.zombie.x,hit.zombie.z,-direction[0],-direction[2],4,scene.reduced,'#9c9e80');}else if(wall<100)scene.collisionFx.burst(walker.x+direction[0]*wall,walker.z+direction[2]*wall,-direction[0],-direction[2],3,scene.reduced);}
+function refreshFoot(dt:number){document.body.classList.toggle('on-foot',walker.active);$('foot-hud').hidden=$('crosshair').hidden=!walker.active||!started||paused;$('foot-hud').textContent=(walker.weapon==='pistol'?'Pistola':'Carabina')+' · '+(walker.reloadTime>0?'Recarregando…':walker.ammo+' / '+walker.reserve)+' · Saúde '+walker.health;const near=walker.active&&footView.nearest(walker),car=walker.active&&walker.nearCar(state,world);const prompt=near?'E · '+(walker.weapon==='pistol'?'Pegar carabina':'Pegar munição'):car?'E · Entrar no carro':document.pointerLockElement!==$('view')?(footFallback?'Mouse direito · olhar':'Clique para mirar'):'';$('foot-prompt').textContent=prompt;$('foot-prompt').hidden=!walker.active||paused||!prompt;$('foot-prompt').onclick=()=>{if(!footInteract())void lockFoot();};if(!paused){hitFlash=Math.max(0,hitFlash-dt);stepSound+=dt;if(walker.active&&walker.speed>.2&&walker.y===0&&stepSound>(walker.crouched?.55:.36)){audio.cue('step');stepSound=0;}}$('crosshair').classList.toggle('hit',hitFlash>0);}
+window.addEventListener('keydown',e=>{if(!started||paused||loading||e.repeat||e.target instanceof HTMLInputElement)return;if(e.code==='KeyF'){if(run)return;e.preventDefault();if(walker.active)return;if(!walker.exit(state,world)){showHint('Pare o carro em um lugar com espaço para sair.');audio.cue('error');return;}state.vx=state.vz=state.speed=0;controls.clear();releaseFoot();audio.cue('door');void lockFoot();}});
+$('view').addEventListener('mousedown',e=>{if(e.button===0&&walker.active&&!paused&&(document.pointerLockElement===$('view')||footFallback)){firing=true;shoot();}});window.addEventListener('mouseup',()=>firing=false);$('view').addEventListener('contextmenu',e=>{if(walker.active)e.preventDefault();});
 async function init(){
-  try{scene=new GameScene($<HTMLCanvasElement>('view'));scene.resize(innerWidth,innerHeight);window.addEventListener('resize',()=>scene.resize(innerWidth,innerHeight));setupCameraInput();
+  try{scene=new GameScene($<HTMLCanvasElement>('view'));scene.onFoot=walker;footView=new FootView(scene.scene,scene.perspective);routeArrow=new RouteArrow();scene.resize(innerWidth,innerHeight);window.addEventListener('resize',()=>scene.resize(innerWidth,innerHeight));setupCameraInput();
     const key=new URLSearchParams(location.search).get('map')==='test'?'test':'davis';await loadMap(key);$<HTMLSelectElement>('map-select').value=key;requestAnimationFrame(frame);
     $('view').addEventListener('webglcontextlost',e=>{e.preventDefault();setPause(true);$('loading').hidden=false;$('loading').innerHTML='<h2>A renderização foi interrompida.</h2><p>O navegador perdeu o contexto gráfico. Recarregue para retomar.</p><button onclick="location.reload()">Recarregar</button>';});
   }catch(e){if(!scene){$('loading').innerHTML='<h2>Não foi possível iniciar o 3D.</h2><p>Este protótipo precisa de um navegador com WebGL 2 e aceleração gráfica habilitada.</p>';}}
@@ -283,7 +298,7 @@ $<HTMLInputElement>('audio-muted').onchange=e=>{audio.set(audio.volume,(e.target
 const buttonCues:Record<string,Cue>={start:'start',locate:'start',pause:'menu',resume:'back',options:'menu','close-settings':'back','settings-done':'back','clear-cache':'success',defaults:'reset','audio-preview':'success','cancel-location':'back'};
 document.addEventListener('pointerdown',()=>{void audio.unlock();},{capture:true});
 document.addEventListener('keydown',e=>{if(!e.repeat)void audio.unlock();},{capture:true});
-document.addEventListener('click',async e=>{const b=(e.target as Element).closest('button,summary');if(!b||b.hasAttribute('data-drive')||b.id==='reset')return;await audio.unlock();audio.cue(buttonCues[b.id]??'click');});
+document.addEventListener('click',async e=>{const b=(e.target as Element).closest('button,summary');if(!b||b.hasAttribute('data-drive')||['reset','interact','foot-prompt'].includes(b.id))return;await audio.unlock();audio.cue(buttonCues[b.id]??'click');});
 document.addEventListener('pointerover',e=>{const b=(e.target as Element).closest('button');if(b&&!b.hasAttribute('data-drive')&&!b.contains((e as PointerEvent).relatedTarget as Node|null))audio.cue('hover');});
 document.addEventListener('input',e=>{if(e.target instanceof HTMLInputElement&&e.target.type==='range')audio.cue('adjust');});
 document.addEventListener('change',e=>{if(e.target instanceof HTMLSelectElement||e.target instanceof HTMLInputElement)audio.cue('click');});

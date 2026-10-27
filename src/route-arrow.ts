@@ -1,0 +1,8 @@
+import * as THREE from 'three';
+import type {CarState,Point} from './types';
+/** Small 3D compass rendered independently of driving/FPS camera projection. */
+export class RouteArrow {
+ scene=new THREE.Scene();camera=new THREE.OrthographicCamera(-1,1,1,-1,.1,10);arrow=new THREE.Group();
+ constructor(){this.camera.position.z=5;this.scene.add(new THREE.HemisphereLight('#fff3cd','#4b615e',2));const sun=new THREE.DirectionalLight('#fff0c2',3);sun.position.set(-2,4,5);this.scene.add(sun);const shape=new THREE.Shape();shape.moveTo(0,.48);shape.lineTo(.3,.02);shape.lineTo(.12,.02);shape.lineTo(.12,-.34);shape.lineTo(-.12,-.34);shape.lineTo(-.12,.02);shape.lineTo(-.3,.02);shape.closePath();const mesh=new THREE.Mesh(new THREE.ExtrudeGeometry(shape,{depth:.12,bevelEnabled:true,bevelSize:.025,bevelThickness:.025,bevelSegments:1,steps:1}),new THREE.MeshStandardMaterial({color:'#efbc63',roughness:.4,metalness:.2}));this.arrow.add(mesh);this.arrow.scale.setScalar(.2);this.arrow.position.y=.76;this.scene.add(this.arrow);}
+ render(renderer:THREE.WebGLRenderer,state:CarState,target:Point|null,color:string){if(!target)return;const size=renderer.getSize(new THREE.Vector2()),aspect=size.x/size.y;this.camera.left=-aspect;this.camera.right=aspect;this.camera.updateProjectionMatrix();const dx=target[0]-state.x,dz=target[1]-state.z,c=Math.cos(state.heading),s=Math.sin(state.heading);this.arrow.rotation.set(.32,0,-Math.atan2(dx*c+dz*s,-(-dx*s+dz*c)));(this.arrow.children[0] as THREE.Mesh<THREE.BufferGeometry,THREE.MeshStandardMaterial>).material.color.set(color);const clear=renderer.autoClear;renderer.autoClear=false;renderer.clearDepth();renderer.render(this.scene,this.camera);renderer.autoClear=clear;}
+}

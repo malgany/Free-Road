@@ -19,19 +19,24 @@ O botão principal sempre tenta sua região. Permissão negada, GPS indisponíve
 | W / ↑ | Acelerar |
 | S / ↓ | Frear, depois dar ré; acender luzes vermelhas |
 | A D / ← → | Esterçar |
-| Espaço | Frear sem engatar ré |
+| Espaço | Frear no carro; pular a pé |
 | C | Aérea → terceira pessoa → cabine → ortográfica |
 | Scroll | Aproximar / afastar, com retenção na terceira pessoa e na transição ortográfica |
 | Mouse na cabine | Olhar pelas janelas |
 | Clique na cabine | Capturar cursor quando o navegador permitir |
 | X / duplo clique | Centralizar o olhar |
 | Esc | Pausar; nas configurações, retornar ao menu |
-| R | Voltar ao ponto de partida do recorte ativo |
+| F | Sair do carro parado |
+| E | Entrar no carro próximo; recolher arma, munição ou carga |
+| WASD a pé | Andar e deslocar para os lados |
+| Mouse a pé | Olhar; botão esquerdo atira |
+| Ctrl a pé | Agachar |
+| R | Recarregar a pé; abrir o abrigo no carro |
 | F3 | Diagnóstico |
 
 O jogo começa na vista aérea, no afastamento máximo. A terceira pessoa fica aproximadamente 5 m atrás do carro. Continue afastando na aérea para passar à ortográfica: ela tem enquadramento fixo e não amplia. Ao aproximar nela, a retenção do scroll precede a volta à aérea. C troca diretamente entre as quatro visões.
 
-Na pausa, **Configurações** fica entre **Continuar** e **Reposicionar carro**. As abas são Mapa, Direção, Câmera, Visual, Som e Atalhos. Sensibilidade começa em 100% e altura aérea em 105 m a cada abertura; **Restaurar todas as configurações** restaura direção, câmera, gráficos e áudio e clima opcional sem alterar o mapa. Há botões de direção em telas de toque e seleção de câmera no menu.
+Na pausa, ficam **Continuar**, **Configurações**, **Abrigo e expedição** e **Tela inicial**. As abas são Mapa, Direção, Câmera, Visual, Som e Atalhos. Sensibilidade começa em 100% e altura aérea em 105 m a cada abertura; **Restaurar todas as configurações** restaura direção, câmera, gráficos e áudio e clima opcional sem alterar o mapa. Há botões de direção em telas de toque e seleção de câmera no menu.
 
 ## Mundo e iluminação
 
@@ -48,7 +53,7 @@ Na pausa, **Configurações** fica entre **Continuar** e **Reposicionar carro**.
 
 A tela inicial oferece **Jogar na minha região** e, havendo progresso, **Continuar expedição**. Novas partidas começam às **06:00**, com uma mensagem do abrigo e uma primeira missão de mantimentos selecionada quando existe uma rota válida. O abrigo fica no ponto inicial. Três tipos de saída — combustível, mantimentos e cuidados — usam POIs do OpenStreetMap quando houver acesso pela rede viária. Na ausência desses dados, o jogo oferece pontos claramente identificados como ilustrativos. Nomes e categorias reais não implicam reprodução visual dos estabelecimentos.
 
-O HUD acompanha **Localizar → Carregar → Entregar**. Siga a rota âmbar, pare a menos de 14 m e use **E**: carregar leva 1,6 s; entregar, 1,1 s. Mover o carro interrompe a operação. As caixas, galões e maleta possuem modelos próprios; a carga aparece no teto durante o retorno. A entrega apresenta os recursos realmente recebidos. **Esc → Abrigo e expedição → Missões** permite trocar a saída antes de recolher, desde que você esteja parado no abrigo. Cada entrega rende 20 peças, com +8 durante o dia. Combustível recupera 45% do tanque; cuidados recuperam 35 de integridade; mantimentos dão 12 peças extras. A oficina oferece reabastecimento, reparo e três reforços de resistência/autonomia. Não há temporizador de missão nem morte definitiva: o resgate volta ao abrigo, abandona a carga e desconta 20% das peças.
+Uma seta 3D orienta a direção; abaixo dela aparecem apenas o recurso e a distância. O destino usa uma área colorida no chão, com raio de 13,5 m, e o minimapa usa setas. Siga a rota âmbar, pare a menos de 14 m e use **E**: carregar leva 1,6 s; entregar, 1,1 s. Mover o carro interrompe a operação. As caixas, galões e maleta possuem modelos próprios; a carga aparece no teto durante o retorno. A entrega apresenta os recursos realmente recebidos. **Esc → Abrigo e expedição → Missões** permite trocar a saída antes de recolher, desde que você esteja parado no abrigo. Cada entrega rende 20 peças, com +8 durante o dia. Combustível recupera 45% do tanque; cuidados recuperam 35 de integridade; mantimentos dão 12 peças extras. A oficina oferece reabastecimento, reparo e três reforços de resistência/autonomia. Não há temporizador de missão nem morte definitiva: o resgate volta ao abrigo, abandona a carga e desconta 20% das peças.
 
 Infectados com três variações visuais, braços articulados e caminhada irregular reagem à proximidade, velocidade e colisões; a noite aumenta alcance, velocidade e população. O limite é 18 de dia / 28 à noite, em seis malhas instanciadas para todos os atores. Até 12 quedas ficam visíveis por sete segundos; não há acúmulo de corpos. A zona de 32 m do abrigo é protegida. Colisões com infectados reduzem integridade e velocidade, com partículas sem gore. A IA contorna obstáculos próximos; não é um sistema de perseguição por toda a cidade.
 
@@ -80,6 +85,18 @@ O cache IndexedDB guarda até 32 mapas derivados e aproximadamente 32 MB de JSON
 A busca e a preparação geográfica rodam em Web Worker. A criação das malhas é dividida em pequenos lotes; a janela anterior continua ativa até a nova ficar pronta. Antes da troca, a posição do carro precisa estar livre. A janela antiga libera suas malhas e materiais; setores distantes da janela atual deixam de ser desenhados. O mapa inteiro do mundo nunca é acumulado na GPU.
 
 A rede ainda pode atrasar: se não houver dados, a borda atual permanece sólida e uma nova tentativa ocorre em 30 s. O terreno é plano; túneis e cruzamentos de vias em altitudes sobrepostas são omitidos nos recortes dinâmicos. Não use o jogo como navegação real.
+
+## Modo a pé — versão 1.4
+
+**F** sai do carro quando ele está parado e há espaço na lateral. Você começa com uma pistola, 12 disparos e 48 de reserva. **E** entra no carro próximo ou recolhe uma arma/munição. Até 16 carabinas aparecem em posições livres próximas a construções; itens recolhidos não reaparecem no mesmo recorte. A carabina usa 30 disparos e reserva limitada a 180.
+
+WASD move o jogador, mouse gira a câmera, Espaço pula, Ctrl agacha e R recarrega. Tiros usam a direção da mira, não atravessam paredes ou o carro, têm cadência e atraem infectados. Um acerto na cabeça ou dois no corpo derrubam um infectado. A saúde a pé é separada da integridade do veículo; ao zerar, você retorna ao carro com saúde recuperada. As construções permanecem fechadas; não há interiores exploráveis.
+
+O navegador precisa aceitar Pointer Lock para esconder o cursor e permitir olhar continuamente. Se bloquear essa captura (como pode acontecer no navegador embutido), o jogo oferece **botão direito segurado para olhar**, mantendo o esquerdo para atirar. Esc libera o mouse e pausa. O modo a pé foi projetado para teclado e mouse; não há ainda controle FPS completo por toque.
+
+Inventário, saúde a pé e até 128 identificadores de itens recolhidos são adicionados ao mesmo slot local. Continuar retoma no carro estacionado, preservando os itens. Uma nova expedição reinicia o inventário. Sons de passos, pulo, pouso, porta, coleta, recarga e disparo respeitam o mixer.
+
+[Verificação da versão 1.4](docs/qa-1.4.md).
 
 ## Revisão 1.3
 

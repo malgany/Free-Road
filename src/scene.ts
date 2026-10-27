@@ -1,3 +1,4 @@
+import type {FootPlayer} from './on-foot';
 import * as THREE from 'three';
 import {mergeGeometries} from 'three/addons/utils/BufferGeometryUtils.js';
 import type {GameMap,Polygon,CarState,Point} from './types';
@@ -21,7 +22,7 @@ export class GameScene {
   renderer:THREE.WebGLRenderer;scene=new THREE.Scene();perspective=new THREE.PerspectiveCamera(CAMERA.fov,1,0.04,1600);ortho=new THREE.OrthographicCamera(-70,70,70,-70,0.2,1600);
   get orthographic(){return this.zoom.orthographic;} set orthographic(value:boolean){this.zoom.select(value?'orthographic':'aerial');}
   private impulse=0;private impulseTime=0;shock(strength:number){this.impulse=Math.max(this.impulse,Math.min(.085,strength*.003));this.impulseTime=0;}
-  loadGeneration=0; private visibilityTick=0; private shadowTick=0;
+  onFoot:FootPlayer|null=null;loadGeneration=0; private visibilityTick=0; private shadowTick=0;
   cameraHeading=0;cameraPosition=new THREE.Vector3();cameraReady=false;car=new THREE.Group();body=new THREE.Group();frontWheels:THREE.Group[]=[];wheels:THREE.Mesh[]=[];
   debug=new THREE.Group();worldGroup=new THREE.Group();light:THREE.DirectionalLight;gradient:THREE.DataTexture;reduced=false;map!:GameMap;world!:CollisionWorld;
   zoom=new CameraZoom(); dayTime=0; phase='Dia'; headlightPower=0;
@@ -33,7 +34,7 @@ export class GameScene {
   constructor(canvas:HTMLCanvasElement){
     this.renderer=new THREE.WebGLRenderer({canvas,antialias:true,alpha:false,powerPreference:'high-performance'});
     this.renderer.setPixelRatio(Math.min(devicePixelRatio,1.5));this.renderer.setClearColor('#e4dfc9');this.renderer.outputColorSpace=THREE.SRGBColorSpace;this.renderer.toneMapping=THREE.ACESFilmicToneMapping;this.renderer.toneMappingExposure=0.95;
-    this.renderer.shadowMap.enabled=true;this.renderer.shadowMap.type=THREE.PCFSoftShadowMap;
+    this.renderer.shadowMap.enabled=true;this.renderer.shadowMap.type=THREE.PCFShadowMap;
     this.gradient=new THREE.DataTexture(new Uint8Array([105,165,218,255]),4,1,THREE.RedFormat);this.gradient.minFilter=this.gradient.magFilter=THREE.NearestFilter;this.gradient.needsUpdate=true;
     this.scene.add(this.ambient);this.scene.fog=new THREE.Fog('#e4dfc9',140,320);
     this.light=new THREE.DirectionalLight('#fff8ec',1.7);this.light.position.set(-60,120,45);this.light.castShadow=true;this.light.shadow.mapSize.set(2048,2048);
@@ -189,7 +190,7 @@ export class GameScene {
     this.trail.instanceMatrix.needsUpdate=true;this.dust.instanceMatrix.needsUpdate=true;
   }
   render(s:CarState,dt:number,braking:boolean,reversing=false,running=true){
-    this.foliageFocus.set(s.x,s.z);this.car.position.set(s.x,0,s.z);this.car.rotation.y=-s.heading;
+    const focusActor=this.onFoot?.active?this.onFoot:s;this.foliageFocus.set(focusActor.x,focusActor.z);this.car.position.set(s.x,0,s.z);this.car.rotation.y=-s.heading;
     const response=1-Math.exp(-10*dt);this.body.rotation.z+=(-s.steer*s.speed*0.003-this.body.rotation.z)*response;this.body.rotation.x+=((braking?0.035:0)-this.body.rotation.x)*response;
     for(const w of this.frontWheels)w.rotation.y=-s.steer;
     this.steering.rotation.z=-s.steer*5;
@@ -199,7 +200,7 @@ export class GameScene {
     this.cameraPosition.lerp(new THREE.Vector3(s.x,0,s.z),1-Math.exp(-CAMERA.positionResponse*dt));
     const z=this.orthographic?1:this.zoom.value,aerial=clamp((z-CHASE_STOP)/(1-CHASE_STOP),0,1),inside=1-clamp(z/CHASE_STOP,0,1),blend=inside*inside*(3-2*inside);
     const heading=lerpAngle(this.cameraHeading,s.heading,blend),fx=Math.sin(heading),fz=-Math.cos(heading);
-    const cam=this.orthographic?this.ortho:this.perspective;
+    const cam=this.onFoot?.active?this.perspective:this.orthographic?this.ortho:this.perspective;
     const behind=5+Math.pow(aerial,1.7)*53,height=2.8+Math.pow(aerial,1.6)*((this.orthographic?105:this.aerialHeight)-2.8);
     const focus=new THREE.Vector3(this.cameraPosition.x,0,this.cameraPosition.z).lerp(new THREE.Vector3(s.x,0,s.z),1-aerial);
     const outside=new THREE.Vector3(focus.x-fx*behind,height,focus.z-fz*behind);
@@ -210,16 +211,17 @@ export class GameScene {
     const yaw=s.heading+this.zoom.yaw,cp=Math.cos(this.zoom.pitch);
     const interiorAim=eye.clone().add(new THREE.Vector3(Math.sin(yaw)*cp,Math.sin(this.zoom.pitch),-Math.cos(yaw)*cp).multiplyScalar(20));
     cam.lookAt(exteriorAim.lerp(interiorAim,blend));if(running){this.impulseTime+=dt;this.impulse*=Math.exp(-9*dt);}if(!this.reduced&&!this.orthographic){cam.position.x+=Math.sin(this.impulseTime*75)*this.impulse*(1-aerial);cam.position.y+=Math.cos(this.impulseTime*61)*this.impulse*.6*(1-aerial);}
-    this.glazing.visible=blend<0.5;
+    this.glazing.visible=this.onFoot?.active||blend<0.5;
     const fov=45+(1-aerial)*20+blend*12;if(Math.abs(this.perspective.fov-fov)>0.01){this.perspective.fov=fov;this.perspective.near=blend>0.5?0.08:0.2;this.perspective.updateProjectionMatrix();}
     if(cam===this.ortho&&this.ortho.zoom!==1){this.ortho.zoom=1;this.ortho.updateProjectionMatrix();}
+    if(this.onFoot?.active){const p=this.onFoot;cam.position.set(p.x,p.y+p.eye,p.z);cam.lookAt(p.x+Math.sin(p.heading)*Math.cos(p.pitch),p.y+p.eye+Math.sin(p.pitch),p.z-Math.cos(p.heading)*Math.cos(p.pitch));this.perspective.fov=78;this.perspective.near=.04;this.perspective.updateProjectionMatrix();}
     if(running)this.dayTime+=dt;
     const lighting=daylightAt(this.dayTime);this.phase=lighting.phase;this.headlightPower=lighting.headlights;
     this.ambient.intensity=0.22+lighting.daylight*0.88;
     this.light.intensity=lighting.daylight*1.7*(1-(this.life.weather?.cloud??0)*.6);this.light.color.set(lighting.phase==='Dia'?'#fff8ec':'#ffad69');
     this.shadowTick+=dt;
-    if(this.shadowTick>0.05){this.shadowTick=0;const sx=Math.round(s.x*2)/2,sz=Math.round(s.z*2)/2;this.light.position.set(sx+Math.cos(lighting.angle)*120,Math.max(8,Math.sin(lighting.angle)*130),sz+35);this.light.target.position.set(sx,0,sz);this.light.shadow.needsUpdate=true;}
-    this.visibilityTick+=dt;if(this.visibilityTick>0.2){this.visibilityTick=0;for(const mesh of this.worldGroup.children){const sector=mesh.userData.sector;if(sector){const d=Math.hypot(sector[0]*128+64-s.x,sector[1]*128+64-s.z);mesh.visible=d<380;mesh.castShadow=d<210;}}}
+    if(this.shadowTick>0.05){this.shadowTick=0;const sx=Math.round(focusActor.x*2)/2,sz=Math.round(focusActor.z*2)/2;this.light.position.set(sx+Math.cos(lighting.angle)*120,Math.max(8,Math.sin(lighting.angle)*130),sz+35);this.light.target.position.set(sx,0,sz);this.light.shadow.needsUpdate=true;}
+    this.visibilityTick+=dt;if(this.visibilityTick>0.2){this.visibilityTick=0;for(const mesh of this.worldGroup.children){const sector=mesh.userData.sector;if(sector){const d=Math.hypot(sector[0]*128+64-focusActor.x,sector[1]*128+64-focusActor.z);mesh.visible=d<380;mesh.castShadow=d<210;}}}
     this.sky.set('#101c32').lerp(new THREE.Color(lighting.phase==='Dia'?'#dce5d9':'#d39b83'),lighting.daylight);if(this.life.weather)this.sky.lerp(new THREE.Color('#879c9d'),this.life.weather.cloud*.28);const fog=this.scene.fog as THREE.Fog;fog.near=this.life.weather?.fog?45:140;fog.far=this.life.weather?.fog?185:320;this.renderer.setClearColor(this.sky);(this.scene.fog as THREE.Fog).color.copy(this.sky);
     this.headlamps.forEach((l,i)=>{l.intensity=lighting.headlights*650;l.castShadow=i===0&&!this.reduced&&lighting.headlights>0.05;});
     this.headMaterials.forEach(m=>m.emissiveIntensity=0.05+lighting.headlights*3);

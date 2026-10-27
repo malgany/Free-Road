@@ -2,7 +2,7 @@ import {EMPTY_INPUT,type Input} from './types';
 export class Controls {
   keys=new Set<string>();touch=new Set<string>();enabled=false;
   constructor(public onPause:(reason:'key'|'blur')=>void,public onReset:()=>void){
-    const allowed=['KeyW','KeyS','KeyA','KeyD','ArrowUp','ArrowDown','ArrowLeft','ArrowRight','Space'];
+    const allowed=['KeyW','KeyS','KeyA','KeyD','ArrowUp','ArrowDown','ArrowLeft','ArrowRight','Space','ControlLeft','ControlRight'];
     window.addEventListener('keydown',e=>{if(e.target instanceof HTMLInputElement||e.target instanceof HTMLSelectElement)return;
       if(allowed.includes(e.code)&&this.enabled){e.preventDefault();this.keys.add(e.code);}if(!e.repeat&&e.code==='KeyR')onReset();if(!e.repeat&&e.code==='Escape')onPause('key');});
     window.addEventListener('keyup',e=>this.keys.delete(e.code));
