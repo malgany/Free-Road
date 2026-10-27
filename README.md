@@ -4,6 +4,10 @@ Jogo de direção livre em Three.js e TypeScript: explore ruas do OpenStreetMap,
 
 ## Jogar
 
+[**Jogar no navegador**](https://malgany.github.io/Free-Road/) · [Repositório](https://github.com/malgany/Free-Road)
+
+![Free Road em terceira pessoa](docs/previa-atual.png)
+
 Abra **Jogar.html** no Chrome, Edge ou Brave, ou use a publicação no GitHub Pages. O mapa de exemplo de Davis e a pista de teste funcionam offline. **Jogar na minha região** pede permissão de localização e consulta o OpenStreetMap; também é possível informar coordenadas em **Pausa → Configurações → Mapa**.
 
 Se a localização não funcionar ao abrir o arquivo diretamente, use coordenadas ou o servidor local. O navegador precisa de WebGL 2. Novas regiões exigem internet ou um recorte válido no cache.
