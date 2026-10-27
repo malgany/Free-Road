@@ -5,6 +5,8 @@ import {CAMERA} from './config';
 import {clamp,lerpAngle,seeded,closest,distance,capsule} from './geometry';
 import {CollisionWorld} from './collision';
 import {CameraZoom,CHASE_STOP} from './camera';
+import {buildTerrain} from './terrain';
+import {WorldLife,cityDetails} from './world-life';
 import {ImpactParticles} from './impact-particles';
 import {daylightAt} from './daylight';
 
@@ -15,7 +17,7 @@ function shapeOf(p:Polygon){const shape=new THREE.Shape(p[0].map(([x,z])=>new TH
 function flat(p:Polygon,y:number){const g=new THREE.ShapeGeometry(shapeOf(p));g.rotateX(-Math.PI/2);g.translate(0,y,0);return g;}
 function extrude(p:Polygon,h:number){const g=new THREE.ExtrudeGeometry(shapeOf(p),{depth:h,bevelEnabled:false,steps:1});g.rotateX(-Math.PI/2);return g;}
 export class GameScene {
-  collisionFx=new ImpactParticles();
+  collisionFx=new ImpactParticles(); life=new WorldLife(); private foliageFocus=new THREE.Vector2();private cameraRay=new THREE.Raycaster(); private cameraBlocks:THREE.Object3D[]=[];
   renderer:THREE.WebGLRenderer;scene=new THREE.Scene();perspective=new THREE.PerspectiveCamera(CAMERA.fov,1,0.04,1600);ortho=new THREE.OrthographicCamera(-70,70,70,-70,0.2,1600);
   get orthographic(){return this.zoom.orthographic;} set orthographic(value:boolean){this.zoom.select(value?'orthographic':'aerial');}
   loadGeneration=0; private visibilityTick=0; private shadowTick=0;
@@ -40,7 +42,7 @@ export class GameScene {
     const tireG=new THREE.PlaneGeometry(0.22,1);tireG.rotateX(-Math.PI/2);
     this.trail=new THREE.InstancedMesh(tireG,new THREE.MeshBasicMaterial({color:'#ffffff',transparent:true,opacity:0.42,depthWrite:false}),TRAILS);this.trail.frustumCulled=false;this.trail.instanceMatrix.setUsage(THREE.DynamicDrawUsage);this.scene.add(this.trail);
     this.dust=new THREE.InstancedMesh(new THREE.IcosahedronGeometry(0.45,0),new THREE.MeshToonMaterial({color:'#d6be91',transparent:true,opacity:0.28,depthWrite:false}),48);this.dust.frustumCulled=false;this.scene.add(this.dust);
-    this.scene.add(this.collisionFx.mesh);this.clearEffects();
+    this.scene.add(this.collisionFx.mesh,this.life.group);this.clearEffects();
   }
   toon(color:THREE.ColorRepresentation){return new THREE.MeshToonMaterial({color,gradientMap:this.gradient});}
   batch(geometries:THREE.BufferGeometry[],material:THREE.Material,shadow=false,target=this.worldGroup,receive=true){
@@ -56,9 +58,11 @@ export class GameScene {
     try{
 
     const b=map.bounds,w=b.maxX-b.minX,d=b.maxZ-b.minZ;
-    const ground=new THREE.Mesh(new THREE.BoxGeometry(w+2,2,d+2),this.toon('#d7cfb5'));ground.position.set((b.maxX+b.minX)/2,-1,(b.maxZ+b.minZ)/2);ground.receiveShadow=true;group.add(ground);
+    const terrain=map.terrain??buildTerrain(map);map.terrain=terrain;
+    batch(terrain.neutral.map(p=>flat(p,0)),this.toon('#d7cfb5'));
+    batch((terrain.sidewalk??[]).map(p=>flat(p,.009)),this.toon('#c6c4b2'));
     const palettes={forest:'#526b43',grass:'#a9b98d',dirt:'#ceb087',water:'#76b6b2'};
-    for(const kind of ['forest','grass','dirt','water'] as const)batch(map.areas.filter(a=>a.kind===kind).flatMap(a=>a.polygons.map(p=>flat(p,TERRAIN_HEIGHT[kind]))),this.toon(palettes[kind]));
+    for(const kind of ['forest','grass','dirt','water'] as const)batch(terrain[kind].map(p=>flat(p,TERRAIN_HEIGHT[kind])),this.toon(palettes[kind]));
     batch(map.corridors.flatMap(c=>c.polygons.map(p=>flat(p,0.05+c.layer*0.002))),this.toon('#536764'));
     batch(map.roads.filter(r=>r.surface==='dirt').flatMap(r=>r.points.slice(1).map((p,i)=>flat(capsule(r.points[i],p,r.width),0.06))),this.toon('#ceb087'));
     // Road centre markings; omit crowded junction tips. Style is synthetic, not a lane survey.
@@ -80,7 +84,8 @@ export class GameScene {
         const list=sectors.get(key)??[];list.push(g);sectors.set(key,list);
       }
     }
-    for(const [key,geometry] of sectors){await checkpoint();const material=new THREE.MeshLambertMaterial({vertexColors:true});batch(geometry,material,true,false);const mesh=group.children.at(-1)!;mesh.userData.sector=key.split(',').map(Number);}
+    for(const [key,geometry] of sectors){await checkpoint();const material=new THREE.MeshLambertMaterial({vertexColors:true});batch(geometry,material,true,false);const mesh=group.children.at(-1)!;mesh.userData.sector=key.split(',').map(Number);mesh.userData.occluder=true;}
+    for(const detail of cityDetails(map,world)){await checkpoint();const material=new THREE.MeshLambertMaterial({color:detail.color});if(detail.vegetation){material.onBeforeCompile=shader=>{shader.uniforms.freeRoadCar={value:this.foliageFocus};shader.vertexShader='varying vec3 freeRoadWorld;\n'+shader.vertexShader;shader.vertexShader=shader.vertexShader.replace('#include <worldpos_vertex>','#include <worldpos_vertex>\nfreeRoadWorld=(modelMatrix*vec4(transformed,1.0)).xyz;');shader.fragmentShader='varying vec3 freeRoadWorld;uniform vec2 freeRoadCar;\n'+shader.fragmentShader;shader.fragmentShader=shader.fragmentShader.replace('#include <clipping_planes_fragment>','#include <clipping_planes_fragment>\nfloat visibility=smoothstep(4.0,8.0,length(freeRoadWorld.xz-freeRoadCar));float stipple=fract(sin(dot(floor(gl_FragCoord.xy),vec2(12.9898,78.233)))*43758.5453);if(visibility<stipple)discard;');};material.customProgramCacheKey=()=>'foliage-cutaway-v1';}batch(detail.gs,material,false,false);group.children.at(-1)!.userData.sector=detail.sector;}
     const rocks:THREE.BufferGeometry[]=[];
     for(const r of map.rocks){const g=new THREE.DodecahedronGeometry(r.radius,0);g.scale(1,0.7,1);g.translate(r.x,r.radius*0.35,r.z);rocks.push(g);}batch(rocks,this.toon('#9c9e91'),true);
     // Visible perimeter follows the exact collision boundary. The line, not the decorative posts, is solid.
@@ -95,7 +100,7 @@ export class GameScene {
     await checkpoint();
     if(!canInstall())throw new Error('O próximo recorte ainda não tem passagem livre para o carro.');
     this.disposeGroup(this.worldGroup);this.disposeGroup(this.debug);this.scene.remove(this.worldGroup,this.debug);
-    this.worldGroup=group;this.debug=debugGroup;this.debug.visible=this.debugEnabled;this.scene.add(group,debugGroup);this.map=map;this.world=world;this.light.shadow.needsUpdate=true;
+    this.worldGroup=group;this.debug=debugGroup;this.debug.visible=this.debugEnabled;this.scene.add(group,debugGroup);this.map=map;this.world=world;this.cameraBlocks=group.children.filter(m=>m.userData.occluder);group.updateMatrixWorld(true);this.light.shadow.needsUpdate=true;
     if(!preserve){this.cameraReady=false;this.clearEffects();}
     }catch(e){this.disposeGroup(group);this.disposeGroup(debugGroup);throw e;}
   }
@@ -109,6 +114,8 @@ export class GameScene {
     box(1.72,0.27,3.55,0,0.64,0,amber,this.body);box(1.68,0.18,3.62,0,0.48,0,dark,this.body);
     box(1.65,0.35,0.96,0,0.87,-1.28,amber,this.body);box(1.57,0.06,0.91,0,1.06,-1.28,cream,this.body);
     box(1.65,0.35,0.65,0,0.87,1.43,amber,this.body);
+    box(1.05,.16,.07,0,.69,-1.82,black,this.body);box(1.8,.1,.13,0,.46,-1.86,cream,this.body);box(1.8,.1,.13,0,.46,1.85,cream,this.body);
+    for(const x of [-.84,.84])box(.04,.06,.25,x,1.09,.55,dark,this.body);
     box(1.56,0.10,1.94,0,1.83,0.16,cream,this.body);
     for(const x of [-0.78,0.78]){
       box(0.1,0.43,1.94,x,0.94,0.16,amber,this.body);
@@ -181,7 +188,7 @@ export class GameScene {
     this.trail.instanceMatrix.needsUpdate=true;this.dust.instanceMatrix.needsUpdate=true;
   }
   render(s:CarState,dt:number,braking:boolean,reversing=false,running=true){
-    this.car.position.set(s.x,0,s.z);this.car.rotation.y=-s.heading;
+    this.foliageFocus.set(s.x,s.z);this.car.position.set(s.x,0,s.z);this.car.rotation.y=-s.heading;
     const response=1-Math.exp(-10*dt);this.body.rotation.z+=(-s.steer*s.speed*0.003-this.body.rotation.z)*response;this.body.rotation.x+=((braking?0.035:0)-this.body.rotation.x)*response;
     for(const w of this.frontWheels)w.rotation.y=-s.steer;
     this.steering.rotation.z=-s.steer*5;
@@ -196,6 +203,7 @@ export class GameScene {
     const focus=new THREE.Vector3(this.cameraPosition.x,0,this.cameraPosition.z).lerp(new THREE.Vector3(s.x,0,s.z),1-aerial);
     const outside=new THREE.Vector3(focus.x-fx*behind,height,focus.z-fz*behind);
     const eye=new THREE.Vector3(-0.37,1.47,0.23);this.car.updateMatrixWorld(true);this.body.localToWorld(eye);
+    if(!this.orthographic&&aerial<.45&&blend<.5){const anchor=new THREE.Vector3(s.x,1.5,s.z),direction=outside.clone().sub(anchor),length=direction.length();this.cameraRay.set(anchor,direction.normalize());this.cameraRay.far=length;const hit=this.cameraRay.intersectObjects(this.cameraBlocks,false)[0];if(hit)outside.copy(anchor).addScaledVector(direction,Math.max(.5,hit.distance-.55));}
     cam.position.copy(outside).lerp(eye,blend);
     const exteriorAim=new THREE.Vector3(focus.x+fx*12,1,focus.z+fz*12);
     const yaw=s.heading+this.zoom.yaw,cp=Math.cos(this.zoom.pitch);
@@ -207,11 +215,11 @@ export class GameScene {
     if(running)this.dayTime+=dt;
     const lighting=daylightAt(this.dayTime);this.phase=lighting.phase;this.headlightPower=lighting.headlights;
     this.ambient.intensity=0.22+lighting.daylight*0.88;
-    this.light.intensity=lighting.daylight*1.7;this.light.color.set(lighting.phase==='Dia'?'#fff8ec':'#ffad69');
+    this.light.intensity=lighting.daylight*1.7*(1-(this.life.weather?.cloud??0)*.6);this.light.color.set(lighting.phase==='Dia'?'#fff8ec':'#ffad69');
     this.shadowTick+=dt;
     if(this.shadowTick>0.05){this.shadowTick=0;const sx=Math.round(s.x*2)/2,sz=Math.round(s.z*2)/2;this.light.position.set(sx+Math.cos(lighting.angle)*120,Math.max(8,Math.sin(lighting.angle)*130),sz+35);this.light.target.position.set(sx,0,sz);this.light.shadow.needsUpdate=true;}
     this.visibilityTick+=dt;if(this.visibilityTick>0.2){this.visibilityTick=0;for(const mesh of this.worldGroup.children){const sector=mesh.userData.sector;if(sector){const d=Math.hypot(sector[0]*128+64-s.x,sector[1]*128+64-s.z);mesh.visible=d<380;mesh.castShadow=d<210;}}}
-    this.sky.set('#101c32').lerp(new THREE.Color(lighting.phase==='Dia'?'#dce5d9':'#d39b83'),lighting.daylight);this.renderer.setClearColor(this.sky);(this.scene.fog as THREE.Fog).color.copy(this.sky);
+    this.sky.set('#101c32').lerp(new THREE.Color(lighting.phase==='Dia'?'#dce5d9':'#d39b83'),lighting.daylight);if(this.life.weather)this.sky.lerp(new THREE.Color('#879c9d'),this.life.weather.cloud*.28);const fog=this.scene.fog as THREE.Fog;fog.near=this.life.weather?.fog?45:140;fog.far=this.life.weather?.fog?185:320;this.renderer.setClearColor(this.sky);(this.scene.fog as THREE.Fog).color.copy(this.sky);
     this.headlamps.forEach((l,i)=>{l.intensity=lighting.headlights*650;l.castShadow=i===0&&!this.reduced&&lighting.headlights>0.05;});
     this.headMaterials.forEach(m=>m.emissiveIntensity=0.05+lighting.headlights*3);
     this.reverseMaterials.forEach(m=>m.emissiveIntensity=reversing?2:0);this.rearLight.intensity=reversing?1.5:0;

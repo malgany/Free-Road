@@ -5,6 +5,8 @@ export function validateMap(value:unknown):asserts value is GameMap {
   const m=value as GameMap;
   if(!m||m.schemaVersion!==1||!Array.isArray(m.roads)||!Array.isArray(m.areas)||!Array.isArray(m.corridors)||!Array.isArray(m.rocks)||!m.bounds||!m.spawn||!m.graph)throw new Error('Mapa inválido ou versão não suportada. Regenere com npm run map:build.');
   if(![m.spawn.x,m.spawn.z,m.spawn.heading,...Object.values(m.bounds)].every(Number.isFinite)||m.bounds.maxX<=m.bounds.minX||m.bounds.maxZ<=m.bounds.minZ)throw new Error('Limites ou ponto de partida inválidos.');
+  if(m.pois&&(!Array.isArray(m.pois)||m.pois.some(p=>!p||typeof p.id!=='string'||typeof p.name!=='string'||!['fuel','supplies','medical','park','landmark','parking'].includes(p.kind)||!Array.isArray(p.point)||p.point.length!==2||!p.point.every(Number.isFinite))))throw new Error('Pontos de interesse inválidos.');
+  if(m.terrain)for(const kind of ['neutral','grass','forest','dirt','water','sidewalk'] as const){const polygons=m.terrain[kind];if(!Array.isArray(polygons)||polygons.some(p=>!Array.isArray(p)||!p.length||p.some(r=>!Array.isArray(r)||r.length<4||r.some(v=>!Array.isArray(v)||v.length!==2||!v.every(Number.isFinite)))))throw new Error('Terreno preparado inválido.');}
   for(const a of m.areas)for(const p of a.polygons)for(const r of p)if(!validRing(r))throw new Error(`Polígono inválido: ${a.id}`);
   for(const r of m.roads)if(r.points.length<2||r.width<2||!Number.isFinite(r.width)||r.points.some(p=>p.length!==2||!p.every(Number.isFinite)))throw new Error(`Via inválida: ${r.id}`);
   if(m.roads.some(r=>r.tunnel))throw new Error('Amostra contém túnel. Este protótipo plano requer outro recorte.');

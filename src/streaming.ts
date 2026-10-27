@@ -18,6 +18,8 @@ export function rebaseMap(source:GameMap,origin:Coordinates):GameMap {
   const points=corners.map(point);
   // Inscribe the slightly rotated quadrilateral: no accessible, unfetched corner.
   m.bounds={minX:Math.max(points[0][0],points[3][0]),maxX:Math.min(points[1][0],points[2][0]),minZ:Math.max(points[0][1],points[1][1]),maxZ:Math.min(points[2][1],points[3][1])};
+  m.pois?.forEach(p=>p.point=point(p.point));
+  if(m.terrain)for(const key of Object.keys(m.terrain) as (keyof typeof m.terrain)[])m.terrain[key]=m.terrain[key].map(p=>p.map(r=>r.map(point)));
   m.places?.forEach(p=>p.point=point(p.point));
   m.roads.forEach(r=>r.points=r.points.map(point));
   m.areas.forEach(a=>a.polygons=a.polygons.map(p=>p.map(r=>r.map(point))));

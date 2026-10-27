@@ -31,7 +31,7 @@ Se a localização não funcionar ao abrir o arquivo diretamente, use coordenada
 
 O jogo começa na vista aérea, no afastamento máximo. A terceira pessoa fica aproximadamente 5 m atrás do carro. Continue afastando na aérea para passar à ortográfica: ela tem enquadramento fixo e não amplia. Ao aproximar nela, a retenção do scroll precede a volta à aérea. C troca diretamente entre as quatro visões.
 
-Na pausa, **Configurações** fica entre **Continuar** e **Voltar ao início**. As abas são Mapa, Direção, Câmera, Visual, Som e Atalhos. Sensibilidade começa em 100% e altura aérea em 105 m a cada abertura; **Restaurar padrões** restaura direção, câmera, gráficos e áudio sem alterar o mapa. Há botões de direção em telas de toque e seleção de câmera no menu.
+Na pausa, **Configurações** fica entre **Continuar** e **Reposicionar carro**. As abas são Mapa, Direção, Câmera, Visual, Som e Atalhos. Sensibilidade começa em 100% e altura aérea em 105 m a cada abertura; **Restaurar todas as configurações** restaura direção, câmera, gráficos e áudio e clima opcional sem alterar o mapa. Há botões de direção em telas de toque e seleção de câmera no menu.
 
 ## Mundo e iluminação
 
@@ -42,13 +42,32 @@ Na pausa, **Configurações** fica entre **Continuar** e **Voltar ao início**. 
 - Na primeira entrada, teclas WASD, C, scroll e Esc aparecem por 2 segundos sem bloquear controles; uma pequena preferência no localStorage evita repetições.
 - Terrenos em níveis discretos: neutro 0; grama 1,2 cm; mata 2,4 cm; terra 3,6 cm; água 4 cm. Ruas preservadas a partir de 5 cm, sem alterar física vertical.
 - Na mata, rastro de 2,05 m de largura; marcas de pneus na grama, terra e chão neutro; no asfalto, ao frear ou fazer curvas fechadas. Limite de 2.048 segmentos e 48 partículas de poeira.
-- Interior geométrico com volante móvel, painel, bancos e janelas. Espelhos são decorativos. Sem trânsito, pedestres, missões ou multiplayer.
+- Interior geométrico com volante móvel, painel, bancos e janelas. Espelhos são decorativos. Sem trânsito civil ou multiplayer. Infectados e missões pertencem apenas ao modo opcional Última rota.
+
+## Última rota: expedição opcional
+
+A tela inicial permite **Exploração livre**, sem combustível, dano ou inimigos, e **Última rota**, uma expedição leve de sobrevivência. O abrigo fica no ponto inicial. Três tipos de saída — combustível, mantimentos e cuidados — usam POIs do OpenStreetMap quando houver acesso pela rede viária. Na ausência desses dados, o jogo oferece pontos claramente identificados como ilustrativos. Nomes e categorias reais não implicam reprodução visual dos estabelecimentos.
+
+Escolha uma missão, siga a rota do minimapa, pare a menos de 14 m e use **E** para recolher a carga. Volte e use E para entregar. Cada entrega rende 20 peças, com +8 durante o dia. Combustível recupera 45% do tanque; cuidados recuperam 35 de integridade; mantimentos dão 12 peças extras. A oficina oferece reabastecimento, reparo e três reforços de resistência/autonomia. Não há temporizador de missão nem morte definitiva: o resgate volta ao abrigo, abandona a carga e desconta 20% das peças.
+
+Infectados simples reagem à proximidade, velocidade e colisões; a noite aumenta alcance, velocidade e população. O limite é 18 de dia / 28 à noite, em três malhas instanciadas. A zona de 32 m do abrigo é protegida. Colisões com infectados reduzem integridade e velocidade, com partículas sem gore. A IA contorna obstáculos próximos; não é um sistema de perseguição por toda a cidade.
+
+O progresso usa um único registro IndexedDB, até 64 KiB, salvo a cada 8 segundos enquanto joga, nos eventos importantes e ao ocultar/sair da página. **Continuar expedição salva** recupera carro, horário, recursos, missão e melhorias. Não é sincronizado entre dispositivos. Uma nova expedição substitui o slot anterior. O resgate pode precisar recuperar o mapa do abrigo; se a rede falhar, a tentativa não aplica penalidade. A exploração livre não sobrescreve a expedição.
+
+## Cidade, navegação e serviços opcionais
+
+- Terrenos são recortados e unidos por prioridade: rua, água, terra, mata, grama; a base neutra preenche apenas o restante. Isso elimina a sobreposição entre classes e entre polígonos duplicados. Calçadas ilustrativas ocupam apenas espaço restante junto a algumas ruas. As alturas discretas e a geometria das ruas permanecem.
+- Fachadas recebem janelas e pequenos volumes de telhado, em lotes por material/setor; árvores decorativas são limitadas a 65 por recorte, espaçadas e com transparência pontilhada perto do carro para liberar a visão. A câmera de perseguição recua até o espaço livre quando um prédio intercepta sua visão.
+- **Pausa → Lugares próximos** permite marcar um POI na exploração livre. A rota usa a rede de ruas do trecho carregado. Fora dessa rede, o HUD informa distância em linha reta; não finge ter uma rota. O marcador na borda do minimapa indica a direção do destino.
+- **Configurações → Mapa → Clima e descobertas reais** contém recursos opcionais, desligados por padrão. Open-Meteo recebe coordenadas virtuais aproximadas para mostrar temperatura, nebulosidade, chuva e neblina. O ciclo de dia/noite permanece fictício. Chuva usa 240 partículas e um nó de ruído reutilizado; efeitos reduzidos ocultam as gotas.
+- A consulta manual à Wikipédia busca até oito artigos com coordenadas em 1 km; abre o artigo original e permite marcar acessos dentro do recorte na exploração livre. Cobertura e disponibilidade dependem do serviço. Erros não bloqueiam a partida.
+- Clima e descobertas usam cache de sessão de até seis respostas / 32 KiB por 15 minutos; não acumulam consultas por quadro. Documentação: [Open-Meteo](https://open-meteo.com/en/docs) e [MediaWiki Geosearch](https://www.mediawiki.org/wiki/API:Geosearch). Clima por Open-Meteo, CC BY 4.0; artigos permanecem na Wikipédia, com suas licenças.
 
 ## Áudio e impactos
 
 Sons sintetizados localmente com Tone.js 15.1.22, sem arquivos de áudio externos: motor com rotação e marchas simuladas; rodagem diferente em asfalto, terra, grama, mata e água; atrito ao virar/frear; sinal de ré; impacto proporcional à colisão e partículas limitadas a 64 instâncias. Não há música de fundo. Curvas leves geram atrito discreto; frenagens geram um ruído mais forte.
 
-Botões, menus, abas, ajustes, câmera, reset e respostas de localização têm feedback. O áudio é desbloqueado pelo primeiro clique/tecla, conforme as regras do navegador. Configurações → Som inclui volume, mudo, teste e medidor de saída. Preferências pequenas persistem no localStorage. Pausa corta o carro e mantém os sinais do menu; aba oculta silencia tudo. Falha de áudio não impede jogar. Sons rápidos têm limite de frequência.
+Botões, menus, abas, ajustes, câmera, reset e respostas de localização têm feedback. Missão, coleta, entrega, oficina, resgate, dano, impacto com infectado, descoberta e mudança de clima têm sinais próprios; chuva também tem ambiente contínuo. O áudio é desbloqueado pelo primeiro clique/tecla, conforme as regras do navegador. Configurações → Som inclui volume, mudo, teste e medidor de saída. Preferências pequenas persistem no localStorage. Pausa corta o carro e mantém os sinais do menu; aba oculta silencia tudo. Falha de áudio não impede jogar. Sons rápidos têm limite de frequência.
 
 AGENTS.md torna a revisão do feedback sonoro obrigatória em alterações futuras. src/audio-model.ts contém as regras testáveis; src/audio.ts mantém um conjunto fixo de nós Tone.js; src/impact-particles.ts gerencia o pool de partículas.
 
@@ -80,6 +99,9 @@ A workflow .github/workflows/pages.yml testa, compila e publica dist/ ao receber
 ### Organização
 
 - src/main.ts: coordenação, HUD, pausa e minimapa a 30 Hz.
+- src/adventure-ui.ts, expedition.ts: modos, missões, economia, IA e persistência.
+- src/terrain.ts, world-life.ts: recortes sem sobreposição, detalhes, atores e chuva.
+- src/pois.ts, routes.ts, context-data.ts: destinos, navegação e serviços opcionais.
 - src/settings-ui.ts, camera.ts, daylight.ts: configurações, câmeras e relógio.
 - src/map.worker.ts, map-client.ts, location.ts: busca/preparação fora da animação.
 - src/map-cache.ts, streaming.ts: cache e alinhamento entre recortes.

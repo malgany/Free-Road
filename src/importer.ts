@@ -1,6 +1,8 @@
 import clipping from 'polygon-clipping';
 import {capsule,validRing,ringArea,pointInRing,inMulti,boundsOf,seeded,circle,closest,distance,intersects} from './geometry';
 import type {GameMap,Point,Ring,MultiPolygon,Area,Road} from './types';
+import {buildTerrain} from './terrain';
+import {poiKind,POI_LABELS} from './pois';
 import {fillMissingBuildings} from './scenery';
 export interface OSMElement {type:string;id:number;lat?:number;lon?:number;nodes?:number[];tags?:Record<string,string>;members?:{type:string;ref:number;role:string}[]}
 export interface RawOSM {elements:OSMElement[];remark?:string}
@@ -109,6 +111,12 @@ export function prepare(raw:RawOSM,meta:Provenance):GameMap {
   result.places=raw.elements.filter(e=>e.type==='node'&&e.tags?.name&&['neighbourhood','quarter','suburb','borough','city','town','village'].includes(e.tags.place)).map(e=>({id:'node/'+e.id,name:e.tags!.name,kind:e.tags!.place,point:nodes.get(e.id)!})).filter(p=>p.point);
   const neighbourhoods=new Set(result.places.map(p=>p.name));
   for(const w of ways.values()){const name=w.tags?.['addr:suburb']??w.tags?.['addr:district'];const point=nodes.get(w.nodes?.[0]??-1);if(name&&point&&!neighbourhoods.has(name)){result.places.push({id:'address/'+w.id,name,kind:'neighbourhood',point});neighbourhoods.add(name);}}
+  result.pois=[];
+  for(const e of raw.elements){const t=e.tags??{},k=poiKind(t);if(!k)continue;let point:Point|undefined;
+    if(e.type==='node')point=nodes.get(e.id);else if(e.type==='way'){const pts=(e.nodes??[]).map(id=>nodes.get(id)).filter(Boolean) as Point[];if(pts.length){const b=boundsOf([[pts]]);point=[(b.minX+b.maxX)/2,(b.minZ+b.maxZ)/2];}}
+    if(point&&Math.abs(point[0])<half&&Math.abs(point[1])<half)result.pois.push({id:e.type+'/'+e.id,name:t.name??POI_LABELS[k],kind:k,point});
+  }
+  result.terrain=buildTerrain(result);
   if(meta.fillUnmappedBuildings)fillMissingBuildings(result);
   return result;
 }

@@ -1,4 +1,6 @@
 import './style.css';
+import {AdventureUI} from './adventure-ui';
+import type {ExpeditionData} from './expedition';
 import {GameAudio} from './audio';
 import {ImpactGate,type Cue} from './audio-model';
 import {GameScene} from './scene';
@@ -11,7 +13,7 @@ import {FIXED_STEP,CAR} from './config';
 import {lerpAngle,closest,distance,wrapAngle} from './geometry';
 import {readCurrentPosition,type Coordinates} from './location';
 import {MapCache,BrowserMapStore,mapKey as regionKey} from './map-cache';
-import {expansionTarget,rebaseMap} from './streaming';
+import {expansionTarget,rebaseMap,unproject} from './streaming';
 import {CHASE_STOP} from './camera';
 import {settingsMarkup} from './settings-ui';
 import {loadMapInWorker} from './map-client';
@@ -49,13 +51,14 @@ let locationAttempt=0,cancelActiveLocation:(()=>void)|null=null;
 let report:Record<string,unknown>|null=null,frameTimes:number[]=[],recorder:MediaRecorder|null=null,chunks:Blob[]=[];
 let run:null|{kind:'benchmark'|'acceptance';elapsed:number;frames:number[];stage:number;events:string[];contacts:Set<string>;positions:Point[]}=null;
 const fixed=new FixedLoop();
-const controls=new Controls(reason=>{if(reason==='key'&&!$('settings').hidden){audio.cue('back');closeSettings();return;}if(reason==='key')audio.cue(paused?'back':'menu');setPause(reason==='key'?!paused:true);},()=>{if($('settings').hidden)reset(true);});
+const adventure=new AdventureUI({map:()=>map,world:()=>world,state:()=>state,scene:()=>scene,mapKey:()=>mapKey,audio,pause:setPause,playing:()=>started&&!paused&&!loading,started:()=>started,toast:showHint,teleport:(p,h)=>teleport(p[0],p[1],h),restore:restoreExpedition,start,home:()=>{setPause(true);started=false;paused=true;controls.enabled=false;$('paused').hidden=true;$('intro').hidden=false;$('settings').hidden=true;}});
+const controls=new Controls(reason=>{if(reason==='key'&&adventure.openDialog){audio.cue('back');adventure.close(false);return;}if(reason==='key'&&!$('settings').hidden){audio.cue('back');closeSettings();return;}if(reason==='key')audio.cue(paused?'back':'menu');setPause(reason==='key'?!paused:true);},()=>{if(started&&!loading&&$('settings').hidden){if(adventure.expedition)adventure.open();else reset(true);}});
 const context=$<HTMLCanvasElement>('minimap').getContext('2d')!;
 const mapLayer=document.createElement('canvas');mapLayer.width=768;mapLayer.height=768;const mc=mapLayer.getContext('2d')!;
 let minimapTransform={scale:1,x:0,z:0};let path:Point[]=[];let lastPath=0;
 function showHint(message:string){$('hint').textContent=message;$('hint').classList.add('show');window.setTimeout(()=>$('hint').classList.remove('show'),3000);}
 function setPause(value:boolean){if(!started||loading)return;paused=value;controls.enabled=!value;controls.clear();fixed.reset();lastTime=performance.now();$('paused').hidden=!value;$('pause').innerHTML=value?playIcon:pauseIcon;if(value)audio.silence();if(value&&document.pointerLockElement)document.exitPointerLock();$('pause').setAttribute('aria-label',value?'Continuar':'Pausar');}
-function start(){if(!started){let seen=false;try{seen=localStorage.getItem('free-road-controls-seen')==='1';localStorage.setItem('free-road-controls-seen','1');}catch{}if(!seen){$('first-controls').hidden=false;window.setTimeout(()=>$('first-controls').hidden=true,2000);}}started=true;$('intro').hidden=true;setPause(false);$('view').focus();}
+function start(){if(!started){let seen=false;try{seen=localStorage.getItem('free-road-controls-seen')==='1';localStorage.setItem('free-road-controls-seen','1');}catch{}if(!seen){$('first-controls').hidden=false;window.setTimeout(()=>$('first-controls').hidden=true,2000);}}started=true;$('intro').hidden=true;setPause(false);$('view').focus();adventure.start();}
 function reset(notify=false){if(!map||loading)return;if(notify)audio.cue('reset');state=initialState(map.spawn);previous={...state};safe={...state};fixed.reset();scene.cameraReady=false;scene.clearEffects();path=[];if(run){run=null;$('report-summary').textContent='Verificação interrompida pelo reset.';}if(notify)showHint('De volta ao ponto de partida.');}
 function teleport(x:number,z:number,heading:number){state=initialState({x,z,heading});previous={...state};safe={...state};scene.cameraReady=false;}
 async function loadMap(key:string){
@@ -65,10 +68,24 @@ async function loadMap(key:string){
     if(key==='current'&&currentMap)value=currentMap;
     else if(embedded)value=JSON.parse(embedded.textContent!);
     else{const res=await fetch(`maps/${key}.json`);if(!res.ok)throw new Error(`Não foi possível abrir maps/${key}.json (HTTP ${res.status}).`);if(!res.headers.get('content-type')?.includes('application/json'))throw new Error(`O arquivo maps/${key}.json está ausente ou não contém um mapa JSON.`);try{value=await res.json();}catch{throw new Error(`O arquivo maps/${key}.json contém JSON inválido. Regenere a amostra.`);}}
-    validateMap(value);await installMap(value,key);loading=false;reset();buildMinimap();$('loading').hidden=true;lastTime=performance.now();
+    validateMap(value);await installMap(value,key);loading=false;reset();adventure.mapChanged();buildMinimap();$('loading').hidden=true;lastTime=performance.now();
   }catch(e){loading=false;paused=true;controls.enabled=false;$('loading').innerHTML='<h2>O caminho não carregou.</h2><p id="load-error"></p><button id="retry">Tentar novamente</button><p><a href="?map=test">Abrir a pista de teste</a></p>';$('load-error').textContent=e instanceof Error?e.message:String(e);$('retry').onclick=()=>location.reload();throw e;}
 }
 async function installMap(value:GameMap,key:string,signal?:AbortSignal){stopStreaming();const nextWorld=new CollisionWorld(value);await scene.load(value,nextWorld,false,signal);map=value;world=nextWorld;mapKey=key;lastRegion=regionKey(value.origin);}
+async function restoreExpedition(data:ExpeditionData,point:Point){
+ if(loading)throw new Error('Aguarde o mapa terminar de carregar.');stopStreaming();audio.silence();loading=true;controls.clear();$('loading').hidden=false;loadingMessage('Recuperando a região da expedição…');$('cancel-location').hidden=true;
+ try{
+  const fits=(m:GameMap)=>point[0]>m.bounds.minX+4&&point[0]<m.bounds.maxX-4&&point[1]>m.bounds.minZ+4&&point[1]<m.bounds.maxZ-4;
+  let value=map;const sameOrigin=map.origin.lat===data.origin.lat&&map.origin.lon===data.origin.lon;
+  if(!sameOrigin||!fits(value)){
+   let local:GameMap|null=null;if(data.mapKey==='davis'||data.mapKey==='test'){const embedded=document.getElementById('embedded-'+data.mapKey);local=embedded?JSON.parse(embedded.textContent!):await (await fetch('maps/'+data.mapKey+'.json')).json();if(local)local=rebaseMap(local,data.origin);}
+   if(local&&fits(local))value=local;else{const center=unproject(point,data.origin,local?.adaptation.scale??1.15);value=rebaseMap((await mapCache.get(center)).map,data.origin);}
+   validateMap(value);
+  }
+  const nextWorld=value===map?world:new CollisionWorld(value);const heading=[data.car.heading,0,Math.PI/2,Math.PI,-Math.PI/2].find(h=>!nextWorld.hit(point[0],point[1],h));if(heading===undefined)throw new Error('A posição salva está bloqueada neste mapa. Tente outra vez.');
+  if(value!==map)await installMap(value,data.mapKey);teleport(point[0],point[1],heading);adventure.mapChanged(true);buildMinimap();
+ }finally{loading=false;$('loading').hidden=true;lastTime=performance.now();fixed.reset();}
+}
 function locationError(message:string){if(message)audio.cue('error');for(const id of ['intro-location-error','settings-location-error']){const el=$(id);el.textContent=message;el.hidden=!message;}}
 function stopStreaming(){streamGeneration++;streamController?.abort();streamController=null;streamBusy=false;streamNext=0;$('stream-status').hidden=true;}
 async function streamMap(){
@@ -84,7 +101,7 @@ async function streamMap(){
     if(nextWorld.hit(state.x,state.z,state.heading))throw new Error('Aguardando um trecho com passagem livre…');
     await scene.load(expanded,nextWorld,true,controller.signal,()=>!nextWorld.hit(state.x,state.z,state.heading));if(generation!==streamGeneration)return;map=expanded;world=nextWorld;
     if(mapKey==='current')currentMap=map;
-    lastRegion=regionKey(result.map.origin);streamError='';buildMinimap();
+    lastRegion=regionKey(result.map.origin);streamError='';adventure.mapChanged(true);buildMinimap();
     status.textContent=result.cached?'Ruas recuperadas do cache':'Novas ruas prontas';
     streamNext=performance.now()+2500;streamNoticeUntil=performance.now()+2200;
   }catch(e){
@@ -127,7 +144,7 @@ async function loadLocation(center?:Coordinates){
     const {map:value,cached}=await mapCache.get(center,message=>loadingMessage(message),controller.signal);if(attempt!==locationAttempt)return;
     await installMap(value,'current',controller.signal);if(attempt!==locationAttempt)return;currentMap=value;
     const select=$<HTMLSelectElement>('map-select');if(!select.querySelector('option[value="current"]'))select.add(new Option('Minha região','current'));select.value='current';
-    loading=false;reset();buildMinimap();$('loading').hidden=true;$('settings').hidden=true;start();audio.cue('success');
+    loading=false;reset();adventure.mapChanged();buildMinimap();$('loading').hidden=true;$('settings').hidden=true;start();audio.cue('success');
     showHint(accuracy!==undefined&&accuracy>1000?'Localização aproximada. Você pode informar coordenadas nos ajustes.':cached?'Região recuperada do cache local. Bom passeio!':'Pronto! O carro está em uma rua próxima.');
   }catch(e){
     if(attempt!==locationAttempt)return;
@@ -139,7 +156,7 @@ function buildMinimap(){
   const b=map.bounds,s=Math.min(750/(b.maxX-b.minX),750/(b.maxZ-b.minZ));minimapTransform={scale:s,x:384-(b.maxX+b.minX)/2*s,z:384-(b.maxZ+b.minZ)/2*s};
   mc.fillStyle='#e1ddca';mc.fillRect(0,0,mapLayer.width,mapLayer.height);mc.save();mc.translate(minimapTransform.x,minimapTransform.z);mc.scale(s,s);
   const poly=(rings:Point[][])=>{mc.beginPath();for(const ring of rings){ring.forEach((p,i)=>i?mc.lineTo(...p):mc.moveTo(...p));mc.closePath();}mc.fill('evenodd');};
-  for(const a of map.areas){mc.fillStyle=({forest:'#526b43',building:'#b3ad95',water:'#75aeab',grass:'#b4c19e',dirt:'#c7ae8d'})[a.kind];for(const p of a.polygons)poly(p);}
+  for(const kind of ['grass','forest','dirt','water','sidewalk'] as const){mc.fillStyle=({forest:'#526b43',water:'#75aeab',grass:'#b4c19e',dirt:'#c7ae8d',sidewalk:'#c6c4b2'})[kind];for(const p of map.terrain?.[kind]??[])poly(p);}mc.fillStyle='#b3ad95';for(const a of map.areas.filter(a=>a.kind==='building'))for(const p of a.polygons)poly(p);
   mc.fillStyle='#687d76';for(const c of map.corridors)for(const p of c.polygons)poly(p);mc.restore();
 }
 function updateMinimap(car=state){
@@ -147,7 +164,7 @@ function updateMinimap(car=state){
   context.fillStyle='#e1ddca';context.fillRect(0,0,320,320);context.save();
   context.translate(160,160);context.rotate(-car.heading);context.scale(scale,scale);context.translate(-car.x,-car.z);
   context.drawImage(mapLayer,-t.x/t.scale,-t.z/t.scale,mapLayer.width/t.scale,mapLayer.height/t.scale);
-  context.strokeStyle='#dd9a3c';context.lineWidth=2/scale;context.beginPath();path.forEach((p,i)=>i?context.lineTo(...p):context.moveTo(...p));context.stroke();context.restore();
+  context.strokeStyle='#dd9a3c';context.lineWidth=2/scale;context.beginPath();path.forEach((p,i)=>i?context.lineTo(...p):context.moveTo(...p));context.stroke();adventure.drawMap(context,scale);context.restore();adventure.drawIndicator(context,car,scale);
   // Vehicle stays upright. World and north marker rotate around it.
   context.save();context.translate(160,160);context.fillStyle='#203d40';context.strokeStyle='#fff4ce';context.lineWidth=2;
   context.beginPath();context.moveTo(0,-13);context.lineTo(9,10);context.lineTo(0,5);context.lineTo(-9,10);context.closePath();context.fill();context.stroke();
@@ -164,7 +181,7 @@ function refreshUI(dt:number){
   $('speed').textContent=Math.round(Math.abs(state.speed)*3.6).toString().padStart(2,'0');$('gear').textContent=state.speed<-0.2?'R':state.speed>0.2?'D':'N';$('distance').textContent=(state.distance/1000).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2})+' km';
   const surface=world.surfaceAt([state.x,state.z]);$('surface').textContent=({forest:'Mata',asphalt:'Asfalto',grass:'Grama',dirt:'Terra',neutral:'Chão neutro',water:'Água'})[surface];
   if(state.distance-lastPath>3){path.push([state.x,state.z]);if(path.length>400)path.shift();lastPath=state.distance;}if(state.distance<lastPath)lastPath=0;
-  $('game-clock').textContent=gameClock(scene.dayTime);
+  $('game-clock').textContent=gameClock(scene.dayTime);adventure.update(.1);
   $('cache-info').textContent=mapCache.store instanceof BrowserMapStore&&mapCache.store.persistent?'Cache local ativo · até 32 regiões · ~32 MB · 30 dias':'Cache da sessão ativo; persistência depende do navegador.';
   if(!streamBusy&&performance.now()>streamNoticeUntil)$('stream-status').hidden=true;
   if(started&&!paused&&!run)void streamMap();
@@ -202,7 +219,7 @@ function finishRun(){const r=run!;const values=[...r.frames].sort((a,b)=>a-b),me
   run=null;reset();if(recorder?.state==='recording')recorder.stop();showHint('Verificação concluída. Relatório disponível.');
 }
 async function startRun(kind:'benchmark'|'acceptance'){
-  const key=kind==='acceptance'?'test':'davis';if(mapKey!==key)await loadMap(key);$<HTMLSelectElement>('map-select').value=key;start();
+  adventure.selectMode('free');adventure.expedition=null;const key=kind==='acceptance'?'test':'davis';if(mapKey!==key)await loadMap(key);$<HTMLSelectElement>('map-select').value=key;start();
   run={kind,elapsed:0,frames:[],stage:-1,events:[],contacts:new Set(),positions:[]};$('report-summary').textContent='Verificação em andamento. Mantenha esta aba visível.';
   if(!debug)toggleDebug();
 }
@@ -216,12 +233,12 @@ function toggleRecording(){
 function toggleDebug(){debug=!debug;$('diagnostics').hidden=!debug;scene.debug.visible=debug;scene.debugEnabled=debug;$('debug-toggle').textContent=debug?'Ocultar diagnóstico (F3)':'Mostrar diagnóstico (F3)';}
 function showSettings(){$<HTMLSelectElement>('camera-select').value=scene.orthographic?'orthographic':scene.zoom.target===0?'cockpit':scene.zoom.target===CHASE_STOP?'chase':'perspective';if(started)setPause(true);$('paused').hidden=true;$('settings').hidden=false;$('close-settings').focus();}
 function closeSettings(){$('settings').hidden=true;if(started){setPause(true);$('options').focus();}else $('start').focus();}
-$('start').onclick=start;$('resume').onclick=()=>setPause(false);$('pause').onclick=()=>{if(!started)start();else setPause(!paused);};$('reset').onclick=()=>reset(true);
+$('start').onclick=()=>void loadMap('davis').then(start).catch(()=>{});$('resume').onclick=()=>setPause(false);$('pause').onclick=()=>{if(!started)start();else setPause(!paused);};$('reset').onclick=()=>{if(adventure.expedition)adventure.open();else reset(true);};
 function chooseTab(id:string){document.querySelectorAll<HTMLButtonElement>('[data-tab]').forEach(button=>{const active=button.dataset.tab===id;button.setAttribute('aria-selected',String(active));button.tabIndex=active?0:-1;$(button.getAttribute('aria-controls')!).hidden=!active;});}
 const tabButtons=Array.from(document.querySelectorAll<HTMLButtonElement>('[data-tab]'));tabButtons.forEach((button,i)=>{button.onclick=()=>chooseTab(button.dataset.tab!);button.onkeydown=e=>{if(e.key==='ArrowRight'||e.key==='ArrowLeft'){e.preventDefault();const next=tabButtons[(i+(e.key==='ArrowRight'?1:-1)+tabButtons.length)%tabButtons.length];chooseTab(next.dataset.tab!);audio.cue('click');next.focus();}};});
 $<HTMLInputElement>('steering-sensitivity').oninput=e=>{steeringSensitivity=Number((e.target as HTMLInputElement).value);$('steering-value').textContent=Math.round(steeringSensitivity*100)+'%';};
 $<HTMLInputElement>('camera-height').oninput=e=>{scene.aerialHeight=Number((e.target as HTMLInputElement).value);$('height-value').textContent=scene.aerialHeight+' m';};
-$('defaults').onclick=()=>{audio.set(.55,false);syncAudio();steeringSensitivity=1;scene.aerialHeight=105;scene.zoom.select('aerial');scene.reduced=false;scene.renderer.shadowMap.enabled=true;scene.renderer.setPixelRatio(Math.min(devicePixelRatio,1.5));scene.resize(innerWidth,innerHeight);$<HTMLInputElement>('steering-sensitivity').value='1';$<HTMLInputElement>('camera-height').value='105';$('steering-value').textContent='100%';$('height-value').textContent='105 m';$<HTMLInputElement>('reduced').checked=false;$<HTMLSelectElement>('camera-select').value='perspective';};
+$('defaults').onclick=()=>{adventure.clearWeather();audio.set(.55,false);syncAudio();steeringSensitivity=1;scene.aerialHeight=105;scene.zoom.select('aerial');scene.reduced=false;scene.renderer.shadowMap.enabled=true;scene.renderer.setPixelRatio(Math.min(devicePixelRatio,1.5));scene.resize(innerWidth,innerHeight);$<HTMLInputElement>('steering-sensitivity').value='1';$<HTMLInputElement>('camera-height').value='105';$('steering-value').textContent='100%';$('height-value').textContent='105 m';$<HTMLInputElement>('reduced').checked=false;$<HTMLSelectElement>('camera-select').value='perspective';};
 $('options').onclick=showSettings;$('close-settings').onclick=closeSettings;$('settings-done').onclick=closeSettings;
 $('locate').onclick=()=>void loadLocation();$('locate-settings').onclick=()=>void loadLocation();
 $('coordinates-go').onclick=()=>{const lat=$<HTMLInputElement>('latitude'),lon=$<HTMLInputElement>('longitude');if(!lat.value.trim()||!lon.value.trim()||!lat.validity.valid||!lon.validity.valid){locationError('Informe latitude e longitude válidas.');return;}void loadLocation({lat:lat.valueAsNumber,lon:lon.valueAsNumber});};
@@ -244,8 +261,8 @@ function frame(now:number){
   if(started&&!paused){
     if(run){run.frames.push(realDt*1000);}
     alpha=fixed.advance(realDt,()=>{previous={...state};if(run){input=runInput();run.elapsed+=FIXED_STEP;}
-      stepCar(state,input,FIXED_STEP,world,steeringSensitivity);
-      const impact=state.impact;if(impact&&impactGate.accept(impact.strength,now/1000)){audio.impact(impact.strength);scene.collisionFx.burst(impact.x,impact.z,impact.nx,impact.nz,impact.strength,scene.reduced);}
+      if(adventure.immobilized)input={...EMPTY_INPUT,brake:true};stepCar(state,input,FIXED_STEP,world,steeringSensitivity);adventure.step(FIXED_STEP);
+      const impact=state.impact;if(impact&&impactGate.accept(impact.strength,now/1000)){audio.impact(impact.strength);adventure.impact(impact.strength);scene.collisionFx.burst(impact.x,impact.z,impact.nx,impact.nz,impact.strength,scene.reduced);}
       if(Number.isFinite(state.x)&&Number.isFinite(state.z)&&!world.hit(state.x,state.z,state.heading))safe={...state};else{state={...safe,vx:0,vz:0,speed:0};showHint('Posição segura recuperada.');}
       if(run&&state.contact)run.contacts.add(state.contact);
     });
@@ -254,7 +271,7 @@ function frame(now:number){
   const rendered={...state,x:previous.x+(state.x-previous.x)*alpha,z:previous.z+(state.z-previous.z)*alpha,heading:lerpAngle(previous.heading,state.heading,alpha)};
   const braking=!!input.brake||(input.backward&&state.speed>0)||(input.forward&&state.speed<0);
   audio.update(state,input,world.surfaceAt([state.x,state.z]),started&&!paused,dt);
-  scene.render(rendered,dt,braking,input.backward||state.speed<-0.2,started&&!paused);frameTimes.push(realDt*1000);if(frameTimes.length>90)frameTimes.shift();
+  adventure.render(dt);scene.render(rendered,dt,braking,input.backward||state.speed<-0.2,started&&!paused);frameTimes.push(realDt*1000);if(frameTimes.length>90)frameTimes.shift();
   minimapTime+=dt;if(minimapTime>=1/30){updateMinimap(rendered);minimapTime=0;}nameTime+=dt;if(nameTime>=0.3){refreshNames(now);nameTime=0;}
   uiTime+=dt;if(uiTime>=0.1){refreshUI(dt);uiTime=0;}
 }

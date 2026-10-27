@@ -6,6 +6,7 @@ export function makeTestMap():GameMap {
   const roads=[road('test/1',[[-65,55],[-65,-55],[65,-55],[65,55],[-65,55]]),road('test/2',[[-65,0],[65,0]],{bridge:true,layer:1}),road('test/3',[[0,-55],[0,-35]],{surface:'dirt'})];
   const box=(x:number,z:number,w:number,h:number):MultiPolygon=>[[[[x,z],[x+w,z],[x+w,z+h],[x,z+h],[x,z]]]];
   const areas:Area[]=[{id:'test/building',kind:'building',polygons:box(-42,14,22,20),height:5,layer:0},{id:'test/water',kind:'water',polygons:box(-15,-35,30,70),height:0,layer:0},{id:'test/dirt',kind:'dirt',polygons:box(-40,-43,25,27),height:0,layer:0},{id:'test/grass',kind:'grass',polygons:box(25,18,26,23),height:0,layer:0}];
+  areas.push({id:'test/forest',kind:'forest',polygons:box(42,25,15,19),height:0,layer:0});
   // An island hole is part of the water multipolygon.
   areas[1].polygons[0].push([[-5,17],[-5,27],[5,27],[5,17],[-5,17]]);
   const corridors=[0,1].map(layer=>{const p=roads.filter(r=>r.layer===layer).flatMap(r=>r.points.slice(1).map((b,i)=>capsule(r.points[i],b,r.width)));return {layer,polygons:clipping.union(p[0],...p.slice(1)) as MultiPolygon};});

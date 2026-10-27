@@ -4,10 +4,10 @@ import type {CarState,Input} from './types';
 import {clamp} from './geometry';
 
 export class GameAudio {
- volume=.55;muted=false;ready=false;failed=false;
+ rain=0;volume=.55;muted=false;ready=false;failed=false;
  private opening?:Promise<void>;private nodes:Tone.ToneAudioNode[]=[];
  private master!:Tone.Gain;private driving!:Tone.Gain;private engine!:Tone.Oscillator;private harmonic!:Tone.Oscillator;
- private engineGain!:Tone.Gain;private roadGain!:Tone.Gain;private skidGain!:Tone.Gain;private roadFilter!:Tone.Filter;
+ private rainGain!:Tone.Gain;private engineGain!:Tone.Gain;private roadGain!:Tone.Gain;private skidGain!:Tone.Gain;private roadFilter!:Tone.Filter;
  private ui!:Tone.Synth;private reverse!:Tone.Synth;private thud!:Tone.MembraneSynth;private crunch!:Tone.NoiseSynth;private meter!:Tone.Meter;
  private crunchAt=-Infinity;private elapsed=0;private reverseAt=-Infinity;private cueAt=-Infinity;private previousSurface:Surface|undefined;
  constructor(){try{const saved=JSON.parse(localStorage.getItem('free-road-audio')??'null');if(saved){if(typeof saved.volume==='number'&&Number.isFinite(saved.volume))this.volume=clamp(saved.volume,0,1);this.muted=saved.muted===true;}}catch{}}
@@ -27,6 +27,7 @@ export class GameAudio {
    this.harmonic=keep(new Tone.Oscillator(90,'triangle')).connect(harmonicGain).start();
    this.roadGain=keep(new Tone.Gain(0)).connect(this.driving);this.roadFilter=keep(new Tone.Filter(250,'bandpass')).connect(this.roadGain);
    keep(new Tone.Noise('pink')).connect(this.roadFilter).start();
+   this.rainGain=keep(new Tone.Gain(0)).connect(this.driving);const rainFilter=keep(new Tone.Filter(1500,'lowpass')).connect(this.rainGain);keep(new Tone.Noise('pink')).connect(rainFilter).start();
    this.skidGain=keep(new Tone.Gain(0)).connect(this.driving);
    const skidFilter=keep(new Tone.Filter(1800,'bandpass')).connect(this.skidGain);keep(new Tone.Noise('white')).connect(skidFilter).start();
    this.ui=keep(new Tone.Synth({oscillator:{type:'sine'},envelope:{attack:.003,decay:.03,sustain:0,release:.06}})).connect(this.master);
@@ -45,7 +46,7 @@ export class GameAudio {
  update(s:CarState,input:Input,surface:Surface,running:boolean,dt:number){
   if(!this.ready)return;this.elapsed+=dt;if(this.elapsed<.05)return;this.elapsed=0;
   const active=running&&!document.hidden;const mix=drivingMix(s,input,surface,active);
-  this.driving.gain.rampTo(active?1:0,.05);this.applyMaster();
+  this.driving.gain.rampTo(active?1:0,.05);this.rainGain.gain.rampTo(active?this.rain*.035:0,.3);this.applyMaster();
   this.engine.frequency.rampTo(mix.engineHz,.1);this.harmonic.frequency.rampTo(mix.engineHz*2,.1);
   this.engineGain.gain.rampTo(mix.engineGain,.09);this.roadFilter.frequency.rampTo(mix.roadHz,.12);this.roadGain.gain.rampTo(mix.roadGain,.1);this.skidGain.gain.rampTo(mix.skidGain,.08);
   const now=Tone.now();if(mix.reverse&&now-this.reverseAt>.85&&!this.muted){this.reverseAt=now;this.reverse.triggerAttackRelease(480,.09,now,.08);}

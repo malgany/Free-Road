@@ -12,7 +12,7 @@ export function cacheEvictions(rows:CachedMap[],now=Date.now()){
 
 export interface CachedMap {key:string;savedAt:number;map:GameMap}
 export interface MapStore {get(key:string):Promise<CachedMap|undefined>;put(entry:CachedMap):Promise<void>;clear():Promise<void>}
-export function mapKey(center:Coordinates){return `v4:${center.lat.toFixed(3)}:${center.lon.toFixed(3)}`;}
+export function mapKey(center:Coordinates){return `v5:${center.lat.toFixed(3)}:${center.lon.toFixed(3)}`;}
 export function snappedCenter(center:Coordinates):Coordinates{return {lat:Number(center.lat.toFixed(3)),lon:Number(center.lon.toFixed(3))};}
 export class BrowserMapStore implements MapStore {
   persistent=false; private opening?:Promise<IDBDatabase|null>;

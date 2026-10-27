@@ -1,7 +1,7 @@
 {
   "name": "Davis · Califórnia",
   "roads": 89,
-  "areas": 433,
+  "areas": 434,
   "rocks": 22,
   "graph": {
     "nodes": 585,
@@ -100,5 +100,5 @@
     "way/255172856: corredor toca edifício; corredor recortado pela implantação original (sem mover edifício)",
     "way/348452320: corredor toca edifício; corredor recortado pela implantação original (sem mover edifício)"
   ],
-  "sha256": "211d42cb9b267c16a8eec4d303757f1feafe1040bf5cd4e83de2d1c2e3f900cb"
+  "sha256": "18a3b0aaaebdc374482eb2b34b4e0040aa1bfdf393e503146bd4ef8bfd603377"
 }
