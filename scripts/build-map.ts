@@ -1,0 +1,14 @@
+import {readFile,writeFile,mkdir} from 'node:fs/promises';
+import {createHash} from 'node:crypto';
+import {prepare} from '../src/importer';
+import {validateMap,connectivityReport} from '../src/validation';
+import {makeTestMap} from '../src/test-map';
+const raw=await readFile('data/raw/davis.osm.json','utf8'),meta=JSON.parse(await readFile('data/raw/provenance.json','utf8'));
+const map=prepare(JSON.parse(raw),{...meta,rawSha256:createHash('sha256').update(raw).digest('hex')});
+validateMap(map);const test=makeTestMap();validateMap(test);
+await mkdir('public/maps',{recursive:true});
+await writeFile('public/maps/davis.json',JSON.stringify(map)+'\n');
+await writeFile('public/maps/test.json',JSON.stringify(test)+'\n');
+const report={name:map.name,roads:map.roads.length,areas:map.areas.length,rocks:map.rocks.length,graph:connectivityReport(map),diagnostics:map.diagnostics,sha256:createHash('sha256').update(JSON.stringify(map)).digest('hex')};
+await writeFile('docs/map-report.json',JSON.stringify(report,null,2)+'\n');
+console.log(JSON.stringify(report,null,2));

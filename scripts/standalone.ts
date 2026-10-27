@@ -1,0 +1,15 @@
+import {readFile,writeFile,readdir} from 'node:fs/promises';
+let html=await readFile('dist/index.html','utf8');
+const js=html.match(/<script type="module"[^>]*src="([^"]+)"[^>]*><\/script>/)?.[1];
+const css=html.match(/<link rel="stylesheet"[^>]*href="([^"]+)"[^>]*>/)?.[1];
+if(!js||!css)throw new Error('Build Vite não encontrado.');
+const script=(await readFile('dist/'+js.replace(/^\//,''),'utf8')).replaceAll('</script','<\\/script');
+const style=await readFile('dist/'+css.replace(/^\//,''),'utf8');
+const notices=await readFile('THIRD-PARTY-NOTICES.txt','utf8');
+html=html.replace(/<script type="module"[^>]*src="[^"]+"[^>]*><\/script>/,()=>`<script type="module">${script}</script>`).replace(/<link rel="stylesheet"[^>]*href="[^"]+"[^>]*>/,()=>`<style>${style}</style>`);
+const maps=await Promise.all(['davis','test'].map(async name=>`<script type="application/json" id="embedded-${name}">${(await readFile(`public/maps/${name}.json`,'utf8')).replaceAll('<','\\u003c')}</script>`));
+html=html.replace('<div id="app"></div>',()=>`<div id="app"></div>${maps.join('')}`);
+html=html.replace('</body>',()=>`<script type="text/plain" id="third-party-notices">${notices.replaceAll('</script','<\\/script')}</script></body>`);
+await writeFile('Jogar.html',html);
+await writeFile('dist/Jogar.html',html);
+console.log(`Jogar.html pronto (${(Buffer.byteLength(html)/1024/1024).toFixed(2)} MB). Abre offline sem instalação.`);
