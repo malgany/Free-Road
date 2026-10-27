@@ -5,6 +5,7 @@ import {CAMERA} from './config';
 import {clamp,lerpAngle,seeded,closest,distance,capsule} from './geometry';
 import {CollisionWorld} from './collision';
 import {CameraZoom,CHASE_STOP} from './camera';
+import {ImpactParticles} from './impact-particles';
 import {daylightAt} from './daylight';
 
 export const TERRAIN_HEIGHT={neutral:0,grass:0.012,forest:0.024,dirt:0.036,water:0.04};
@@ -14,6 +15,7 @@ function shapeOf(p:Polygon){const shape=new THREE.Shape(p[0].map(([x,z])=>new TH
 function flat(p:Polygon,y:number){const g=new THREE.ShapeGeometry(shapeOf(p));g.rotateX(-Math.PI/2);g.translate(0,y,0);return g;}
 function extrude(p:Polygon,h:number){const g=new THREE.ExtrudeGeometry(shapeOf(p),{depth:h,bevelEnabled:false,steps:1});g.rotateX(-Math.PI/2);return g;}
 export class GameScene {
+  collisionFx=new ImpactParticles();
   renderer:THREE.WebGLRenderer;scene=new THREE.Scene();perspective=new THREE.PerspectiveCamera(CAMERA.fov,1,0.04,1600);ortho=new THREE.OrthographicCamera(-70,70,70,-70,0.2,1600);
   get orthographic(){return this.zoom.orthographic;} set orthographic(value:boolean){this.zoom.select(value?'orthographic':'aerial');}
   loadGeneration=0; private visibilityTick=0; private shadowTick=0;
@@ -38,7 +40,7 @@ export class GameScene {
     const tireG=new THREE.PlaneGeometry(0.22,1);tireG.rotateX(-Math.PI/2);
     this.trail=new THREE.InstancedMesh(tireG,new THREE.MeshBasicMaterial({color:'#ffffff',transparent:true,opacity:0.42,depthWrite:false}),TRAILS);this.trail.frustumCulled=false;this.trail.instanceMatrix.setUsage(THREE.DynamicDrawUsage);this.scene.add(this.trail);
     this.dust=new THREE.InstancedMesh(new THREE.IcosahedronGeometry(0.45,0),new THREE.MeshToonMaterial({color:'#d6be91',transparent:true,opacity:0.28,depthWrite:false}),48);this.dust.frustumCulled=false;this.scene.add(this.dust);
-    this.clearEffects();
+    this.scene.add(this.collisionFx.mesh);this.clearEffects();
   }
   toon(color:THREE.ColorRepresentation){return new THREE.MeshToonMaterial({color,gradientMap:this.gradient});}
   batch(geometries:THREE.BufferGeometry[],material:THREE.Material,shadow=false,target=this.worldGroup,receive=true){
@@ -150,7 +152,7 @@ export class GameScene {
       const hub=new THREE.Mesh(new THREE.CylinderGeometry(0.2,0.2,0.25,10),cream);hub.rotation.z=Math.PI/2;pivot.add(hub);if(z<0)this.frontWheels.push(pivot);
     }
   }
-  clearEffects(){this.lastTrail=null;this.trailAges.fill(100);this.dustAges.fill(100);this.matrix.scale.setScalar(0);this.matrix.updateMatrix();for(let i=0;i<TRAILS;i++)this.trail.setMatrixAt(i,this.matrix.matrix);for(let i=0;i<48;i++)this.dust.setMatrixAt(i,this.matrix.matrix);this.trail.instanceMatrix.needsUpdate=this.dust.instanceMatrix.needsUpdate=true;}
+  clearEffects(){this.collisionFx?.clear();this.lastTrail=null;this.trailAges.fill(100);this.dustAges.fill(100);this.matrix.scale.setScalar(0);this.matrix.updateMatrix();for(let i=0;i<TRAILS;i++)this.trail.setMatrixAt(i,this.matrix.matrix);for(let i=0;i<48;i++)this.dust.setMatrixAt(i,this.matrix.matrix);this.trail.instanceMatrix.needsUpdate=this.dust.instanceMatrix.needsUpdate=true;}
   resize(width:number,height:number){this.renderer.setSize(width,height,false);this.perspective.aspect=width/height;this.perspective.updateProjectionMatrix();const span=height>width?80:63;Object.assign(this.ortho,{left:-span*width/height,right:span*width/height,top:span,bottom:-span});this.ortho.updateProjectionMatrix();}
   effects(s:CarState,dt:number,braking:boolean){
     if(dt<=0)return;this.effectTick+=dt;
@@ -214,6 +216,6 @@ export class GameScene {
     this.headMaterials.forEach(m=>m.emissiveIntensity=0.05+lighting.headlights*3);
     this.reverseMaterials.forEach(m=>m.emissiveIntensity=reversing?2:0);this.rearLight.intensity=reversing?1.5:0;
     this.tailMaterials.forEach(m=>m.emissiveIntensity=braking?3:0.08+lighting.headlights*0.8);
-    this.effects(s,running?dt:0,braking);this.renderer.render(this.scene,cam);
+    this.collisionFx.update(running?dt:0);this.effects(s,running?dt:0,braking);this.renderer.render(this.scene,cam);
   }
 }

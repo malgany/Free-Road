@@ -14,5 +14,5 @@ export interface GameMap {
   places?:Place[];
 }
 export interface Input {forward:boolean;backward:boolean;left:boolean;right:boolean; brake?:boolean}
-export interface CarState {x:number;z:number;heading:number;vx:number;vz:number;steer:number;speed:number;distance:number;contact:string|null}
+export interface CarState {x:number;z:number;heading:number;vx:number;vz:number;steer:number;speed:number;distance:number;contact:string|null;impact?:{strength:number;x:number;z:number;nx:number;nz:number}}
 export const EMPTY_INPUT:Input = {forward:false,backward:false,left:false,right:false};

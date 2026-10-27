@@ -14,14 +14,15 @@
     "map:audit": "tsx scripts/audit-map.ts"
   },
   "dependencies": {
+    "polygon-clipping": "0.15.7",
     "three": "0.185.1",
-    "polygon-clipping": "0.15.7"
+    "tone": "15.1.22"
   },
   "devDependencies": {
-    "@types/three": "0.185.0",
     "@types/node": "^22.0.0",
+    "@types/three": "0.185.0",
+    "tsx": "^4.20.0",
     "typescript": "~5.8.3",
-    "vite": "^6.3.5",
-    "tsx": "^4.20.0"
+    "vite": "^6.3.5"
   }
 }

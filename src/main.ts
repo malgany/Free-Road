@@ -1,4 +1,6 @@
 import './style.css';
+import {GameAudio} from './audio';
+import {ImpactGate,type Cue} from './audio-model';
 import {GameScene} from './scene';
 import {CollisionWorld} from './collision';
 import {Controls} from './input';
@@ -38,6 +40,7 @@ const $=<T extends HTMLElement=HTMLElement>(id:string)=>document.getElementById(
 let scene:GameScene,world:CollisionWorld,map:GameMap,state:CarState,previous:CarState,safe:CarState;
 let started=false,paused=true,mapKey='davis',debug=false,loading=false,lastTime=performance.now(),uiTime=0;
 let currentMap:GameMap|null=null;
+const audio=new GameAudio(),impactGate=new ImpactGate();
 const mapCache=new MapCache(new BrowserMapStore(),loadMapInWorker);
 let steeringSensitivity=1,minimapTime=0,nameTime=0;const streetName=new StableName(),regionName=new StableName();
 let streamController:AbortController|null=null,streamGeneration=0,streamNext=0,streamBusy=false;
@@ -46,17 +49,17 @@ let locationAttempt=0,cancelActiveLocation:(()=>void)|null=null;
 let report:Record<string,unknown>|null=null,frameTimes:number[]=[],recorder:MediaRecorder|null=null,chunks:Blob[]=[];
 let run:null|{kind:'benchmark'|'acceptance';elapsed:number;frames:number[];stage:number;events:string[];contacts:Set<string>;positions:Point[]}=null;
 const fixed=new FixedLoop();
-const controls=new Controls(reason=>{if(reason==='key'&&!$('settings').hidden){closeSettings();return;}setPause(reason==='key'?!paused:true);},()=>{if($('settings').hidden)reset(true);});
+const controls=new Controls(reason=>{if(reason==='key'&&!$('settings').hidden){audio.cue('back');closeSettings();return;}if(reason==='key')audio.cue(paused?'back':'menu');setPause(reason==='key'?!paused:true);},()=>{if($('settings').hidden)reset(true);});
 const context=$<HTMLCanvasElement>('minimap').getContext('2d')!;
 const mapLayer=document.createElement('canvas');mapLayer.width=768;mapLayer.height=768;const mc=mapLayer.getContext('2d')!;
 let minimapTransform={scale:1,x:0,z:0};let path:Point[]=[];let lastPath=0;
 function showHint(message:string){$('hint').textContent=message;$('hint').classList.add('show');window.setTimeout(()=>$('hint').classList.remove('show'),3000);}
-function setPause(value:boolean){if(!started||loading)return;paused=value;controls.enabled=!value;controls.clear();fixed.reset();lastTime=performance.now();$('paused').hidden=!value;$('pause').innerHTML=value?playIcon:pauseIcon;if(value&&document.pointerLockElement)document.exitPointerLock();$('pause').setAttribute('aria-label',value?'Continuar':'Pausar');}
+function setPause(value:boolean){if(!started||loading)return;paused=value;controls.enabled=!value;controls.clear();fixed.reset();lastTime=performance.now();$('paused').hidden=!value;$('pause').innerHTML=value?playIcon:pauseIcon;if(value)audio.silence();if(value&&document.pointerLockElement)document.exitPointerLock();$('pause').setAttribute('aria-label',value?'Continuar':'Pausar');}
 function start(){if(!started){let seen=false;try{seen=localStorage.getItem('free-road-controls-seen')==='1';localStorage.setItem('free-road-controls-seen','1');}catch{}if(!seen){$('first-controls').hidden=false;window.setTimeout(()=>$('first-controls').hidden=true,2000);}}started=true;$('intro').hidden=true;setPause(false);$('view').focus();}
-function reset(notify=false){if(!map||loading)return;state=initialState(map.spawn);previous={...state};safe={...state};fixed.reset();scene.cameraReady=false;scene.clearEffects();path=[];if(run){run=null;$('report-summary').textContent='Verificação interrompida pelo reset.';}if(notify)showHint('De volta ao ponto de partida.');}
+function reset(notify=false){if(!map||loading)return;if(notify)audio.cue('reset');state=initialState(map.spawn);previous={...state};safe={...state};fixed.reset();scene.cameraReady=false;scene.clearEffects();path=[];if(run){run=null;$('report-summary').textContent='Verificação interrompida pelo reset.';}if(notify)showHint('De volta ao ponto de partida.');}
 function teleport(x:number,z:number,heading:number){state=initialState({x,z,heading});previous={...state};safe={...state};scene.cameraReady=false;}
 async function loadMap(key:string){
-  stopStreaming();loading=true;controls.clear();$('loading').hidden=false;
+  stopStreaming();audio.silence();loading=true;controls.clear();$('loading').hidden=false;
   try{
     let value:unknown;const embedded=document.getElementById(`embedded-${key}`);
     if(key==='current'&&currentMap)value=currentMap;
@@ -66,7 +69,7 @@ async function loadMap(key:string){
   }catch(e){loading=false;paused=true;controls.enabled=false;$('loading').innerHTML='<h2>O caminho não carregou.</h2><p id="load-error"></p><button id="retry">Tentar novamente</button><p><a href="?map=test">Abrir a pista de teste</a></p>';$('load-error').textContent=e instanceof Error?e.message:String(e);$('retry').onclick=()=>location.reload();throw e;}
 }
 async function installMap(value:GameMap,key:string,signal?:AbortSignal){stopStreaming();const nextWorld=new CollisionWorld(value);await scene.load(value,nextWorld,false,signal);map=value;world=nextWorld;mapKey=key;lastRegion=regionKey(value.origin);}
-function locationError(message:string){for(const id of ['intro-location-error','settings-location-error']){const el=$(id);el.textContent=message;el.hidden=!message;}}
+function locationError(message:string){if(message)audio.cue('error');for(const id of ['intro-location-error','settings-location-error']){const el=$(id);el.textContent=message;el.hidden=!message;}}
 function stopStreaming(){streamGeneration++;streamController?.abort();streamController=null;streamBusy=false;streamNext=0;$('stream-status').hidden=true;}
 async function streamMap(){
   if(streamBusy||loading||mapKey==='test'||performance.now()<streamNext)return;
@@ -96,7 +99,7 @@ function setupCameraInput(){
   canvas.addEventListener('wheel',e=>{
     if(!started||paused||loading)return;e.preventDefault();
     const delta=e.deltaY*(e.deltaMode===1?16:e.deltaMode===2?innerHeight:1);
-    scene.zoom.wheel(delta,performance.now());
+    scene.zoom.wheel(delta,performance.now());audio.cue('camera');
     if(scene.zoom.target>0&&document.pointerLockElement===canvas)document.exitPointerLock();
   },{passive:false});
   window.addEventListener('mousemove',e=>{
@@ -106,11 +109,11 @@ function setupCameraInput(){
   });
   canvas.addEventListener('click',()=>{
     if(paused||scene.zoom.mode!=='cockpit')return;
-    try{Promise.resolve(canvas.requestPointerLock()).then(()=>{if(document.pointerLockElement===canvas)scene.zoom.center();}).catch(()=>showHint('Mova o cursor sobre o cenário para olhar ao redor.'));}catch{showHint('Mova o cursor sobre o cenário para olhar ao redor.');}
+    try{Promise.resolve(canvas.requestPointerLock()).then(()=>{if(document.pointerLockElement===canvas)scene.zoom.center();audio.cue('camera');}).catch(()=>showHint('Mova o cursor sobre o cenário para olhar ao redor.'));}catch{showHint('Mova o cursor sobre o cenário para olhar ao redor.');}
   });
-  canvas.addEventListener('dblclick',()=>scene.zoom.center());
+  canvas.addEventListener('dblclick',()=>{scene.zoom.center();audio.cue('camera');});
   document.addEventListener('pointerlockchange',()=>{const locked=document.pointerLockElement===canvas;if(wasLocked&&!locked&&scene.zoom.target===0&&!paused)setPause(true);wasLocked=locked;});
-  window.addEventListener('keydown',e=>{if(!started||paused||e.repeat||e.target instanceof HTMLInputElement||e.target instanceof HTMLSelectElement)return;if(e.code==='KeyC'){scene.zoom.cycle();if(document.pointerLockElement&&scene.zoom.target!==0)document.exitPointerLock();}if(e.code==='KeyX')scene.zoom.center();});
+  window.addEventListener('keydown',e=>{if(!started||paused||e.repeat||e.target instanceof HTMLInputElement||e.target instanceof HTMLSelectElement)return;if(e.code==='KeyC'){audio.cue('camera');scene.zoom.cycle();if(document.pointerLockElement&&scene.zoom.target!==0)document.exitPointerLock();}if(e.code==='KeyX'){scene.zoom.center();audio.cue('camera');}});
 }
 function loadingMessage(message:string){$('loading').innerHTML='<h2>Preparando o caminho…</h2><p id="loading-status" role="status"></p><button id="cancel-location">Cancelar</button>';$('loading-status').textContent=message;$('cancel-location').onclick=()=>cancelActiveLocation?.();}
 async function loadLocation(center?:Coordinates){
@@ -124,7 +127,7 @@ async function loadLocation(center?:Coordinates){
     const {map:value,cached}=await mapCache.get(center,message=>loadingMessage(message),controller.signal);if(attempt!==locationAttempt)return;
     await installMap(value,'current',controller.signal);if(attempt!==locationAttempt)return;currentMap=value;
     const select=$<HTMLSelectElement>('map-select');if(!select.querySelector('option[value="current"]'))select.add(new Option('Minha região','current'));select.value='current';
-    loading=false;reset();buildMinimap();$('loading').hidden=true;$('settings').hidden=true;start();
+    loading=false;reset();buildMinimap();$('loading').hidden=true;$('settings').hidden=true;start();audio.cue('success');
     showHint(accuracy!==undefined&&accuracy>1000?'Localização aproximada. Você pode informar coordenadas nos ajustes.':cached?'Região recuperada do cache local. Bom passeio!':'Pronto! O carro está em uma rua próxima.');
   }catch(e){
     if(attempt!==locationAttempt)return;
@@ -156,6 +159,8 @@ function refreshNames(now:number){const closest=world.index.nearest([state.x,sta
   if(regionName.update(nearbyRegion(map,[state.x,state.z]),now)&&regionName.value){const el=$('region-name');el.textContent=regionName.value;el.classList.remove('announce');void el.offsetWidth;el.classList.add('announce');}
 }
 function refreshUI(dt:number){
+  $('audio-status').textContent=audio.failed?'Áudio indisponível neste navegador; você pode continuar jogando.':audio.ready?(audio.muted?'Som silenciado.':'Som ativo. Ajuste o volume para seu conforto.'):'O áudio inicia ao interagir com o jogo.';
+  ($('audio-meter') as HTMLMeterElement).value=audio.level();
   $('speed').textContent=Math.round(Math.abs(state.speed)*3.6).toString().padStart(2,'0');$('gear').textContent=state.speed<-0.2?'R':state.speed>0.2?'D':'N';$('distance').textContent=(state.distance/1000).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2})+' km';
   const surface=world.surfaceAt([state.x,state.z]);$('surface').textContent=({forest:'Mata',asphalt:'Asfalto',grass:'Grama',dirt:'Terra',neutral:'Chão neutro',water:'Água'})[surface];
   if(state.distance-lastPath>3){path.push([state.x,state.z]);if(path.length>400)path.shift();lastPath=state.distance;}if(state.distance<lastPath)lastPath=0;
@@ -213,10 +218,10 @@ function showSettings(){$<HTMLSelectElement>('camera-select').value=scene.orthog
 function closeSettings(){$('settings').hidden=true;if(started){setPause(true);$('options').focus();}else $('start').focus();}
 $('start').onclick=start;$('resume').onclick=()=>setPause(false);$('pause').onclick=()=>{if(!started)start();else setPause(!paused);};$('reset').onclick=()=>reset(true);
 function chooseTab(id:string){document.querySelectorAll<HTMLButtonElement>('[data-tab]').forEach(button=>{const active=button.dataset.tab===id;button.setAttribute('aria-selected',String(active));button.tabIndex=active?0:-1;$(button.getAttribute('aria-controls')!).hidden=!active;});}
-const tabButtons=Array.from(document.querySelectorAll<HTMLButtonElement>('[data-tab]'));tabButtons.forEach((button,i)=>{button.onclick=()=>chooseTab(button.dataset.tab!);button.onkeydown=e=>{if(e.key==='ArrowRight'||e.key==='ArrowLeft'){e.preventDefault();const next=tabButtons[(i+(e.key==='ArrowRight'?1:-1)+tabButtons.length)%tabButtons.length];chooseTab(next.dataset.tab!);next.focus();}};});
+const tabButtons=Array.from(document.querySelectorAll<HTMLButtonElement>('[data-tab]'));tabButtons.forEach((button,i)=>{button.onclick=()=>chooseTab(button.dataset.tab!);button.onkeydown=e=>{if(e.key==='ArrowRight'||e.key==='ArrowLeft'){e.preventDefault();const next=tabButtons[(i+(e.key==='ArrowRight'?1:-1)+tabButtons.length)%tabButtons.length];chooseTab(next.dataset.tab!);audio.cue('click');next.focus();}};});
 $<HTMLInputElement>('steering-sensitivity').oninput=e=>{steeringSensitivity=Number((e.target as HTMLInputElement).value);$('steering-value').textContent=Math.round(steeringSensitivity*100)+'%';};
 $<HTMLInputElement>('camera-height').oninput=e=>{scene.aerialHeight=Number((e.target as HTMLInputElement).value);$('height-value').textContent=scene.aerialHeight+' m';};
-$('defaults').onclick=()=>{steeringSensitivity=1;scene.aerialHeight=105;scene.zoom.select('aerial');scene.reduced=false;scene.renderer.shadowMap.enabled=true;scene.renderer.setPixelRatio(Math.min(devicePixelRatio,1.5));scene.resize(innerWidth,innerHeight);$<HTMLInputElement>('steering-sensitivity').value='1';$<HTMLInputElement>('camera-height').value='105';$('steering-value').textContent='100%';$('height-value').textContent='105 m';$<HTMLInputElement>('reduced').checked=false;$<HTMLSelectElement>('camera-select').value='perspective';};
+$('defaults').onclick=()=>{audio.set(.55,false);syncAudio();steeringSensitivity=1;scene.aerialHeight=105;scene.zoom.select('aerial');scene.reduced=false;scene.renderer.shadowMap.enabled=true;scene.renderer.setPixelRatio(Math.min(devicePixelRatio,1.5));scene.resize(innerWidth,innerHeight);$<HTMLInputElement>('steering-sensitivity').value='1';$<HTMLInputElement>('camera-height').value='105';$('steering-value').textContent='100%';$('height-value').textContent='105 m';$<HTMLInputElement>('reduced').checked=false;$<HTMLSelectElement>('camera-select').value='perspective';};
 $('options').onclick=showSettings;$('close-settings').onclick=closeSettings;$('settings-done').onclick=closeSettings;
 $('locate').onclick=()=>void loadLocation();$('locate-settings').onclick=()=>void loadLocation();
 $('coordinates-go').onclick=()=>{const lat=$<HTMLInputElement>('latitude'),lon=$<HTMLInputElement>('longitude');if(!lat.value.trim()||!lon.value.trim()||!lat.validity.valid||!lon.validity.valid){locationError('Informe latitude e longitude válidas.');return;}void loadLocation({lat:lat.valueAsNumber,lon:lon.valueAsNumber});};
@@ -240,6 +245,7 @@ function frame(now:number){
     if(run){run.frames.push(realDt*1000);}
     alpha=fixed.advance(realDt,()=>{previous={...state};if(run){input=runInput();run.elapsed+=FIXED_STEP;}
       stepCar(state,input,FIXED_STEP,world,steeringSensitivity);
+      const impact=state.impact;if(impact&&impactGate.accept(impact.strength,now/1000)){audio.impact(impact.strength);scene.collisionFx.burst(impact.x,impact.z,impact.nx,impact.nz,impact.strength,scene.reduced);}
       if(Number.isFinite(state.x)&&Number.isFinite(state.z)&&!world.hit(state.x,state.z,state.heading))safe={...state};else{state={...safe,vx:0,vz:0,speed:0};showHint('Posição segura recuperada.');}
       if(run&&state.contact)run.contacts.add(state.contact);
     });
@@ -247,6 +253,7 @@ function frame(now:number){
   }
   const rendered={...state,x:previous.x+(state.x-previous.x)*alpha,z:previous.z+(state.z-previous.z)*alpha,heading:lerpAngle(previous.heading,state.heading,alpha)};
   const braking=!!input.brake||(input.backward&&state.speed>0)||(input.forward&&state.speed<0);
+  audio.update(state,input,world.surfaceAt([state.x,state.z]),started&&!paused,dt);
   scene.render(rendered,dt,braking,input.backward||state.speed<-0.2,started&&!paused);frameTimes.push(realDt*1000);if(frameTimes.length>90)frameTimes.shift();
   minimapTime+=dt;if(minimapTime>=1/30){updateMinimap(rendered);minimapTime=0;}nameTime+=dt;if(nameTime>=0.3){refreshNames(now);nameTime=0;}
   uiTime+=dt;if(uiTime>=0.1){refreshUI(dt);uiTime=0;}
@@ -257,4 +264,19 @@ async function init(){
     $('view').addEventListener('webglcontextlost',e=>{e.preventDefault();setPause(true);$('loading').hidden=false;$('loading').innerHTML='<h2>A renderização foi interrompida.</h2><p>O navegador perdeu o contexto gráfico. Recarregue para retomar.</p><button onclick="location.reload()">Recarregar</button>';});
   }catch(e){if(!scene){$('loading').innerHTML='<h2>Não foi possível iniciar o 3D.</h2><p>Este protótipo precisa de um navegador com WebGL 2 e aceleração gráfica habilitada.</p>';}}
 }
+function syncAudio(){
+ $<HTMLInputElement>('audio-volume').value=String(audio.volume);$<HTMLInputElement>('audio-muted').checked=audio.muted;$('audio-value').textContent=Math.round(audio.volume*100)+'%';
+}
+syncAudio();
+$<HTMLInputElement>('audio-volume').oninput=e=>{audio.set(Number((e.target as HTMLInputElement).value));syncAudio();};
+$<HTMLInputElement>('audio-muted').onchange=e=>{audio.set(audio.volume,(e.target as HTMLInputElement).checked);syncAudio();};
+const buttonCues:Record<string,Cue>={start:'start',locate:'start',pause:'menu',resume:'back',options:'menu','close-settings':'back','settings-done':'back','clear-cache':'success',defaults:'reset','audio-preview':'success','cancel-location':'back'};
+document.addEventListener('pointerdown',()=>{void audio.unlock();},{capture:true});
+document.addEventListener('keydown',e=>{if(!e.repeat)void audio.unlock();},{capture:true});
+document.addEventListener('click',async e=>{const b=(e.target as Element).closest('button,summary');if(!b||b.hasAttribute('data-drive')||b.id==='reset')return;await audio.unlock();audio.cue(buttonCues[b.id]??'click');});
+document.addEventListener('pointerover',e=>{const b=(e.target as Element).closest('button');if(b&&!b.hasAttribute('data-drive')&&!b.contains((e as PointerEvent).relatedTarget as Node|null))audio.cue('hover');});
+document.addEventListener('input',e=>{if(e.target instanceof HTMLInputElement&&e.target.type==='range')audio.cue('adjust');});
+document.addEventListener('change',e=>{if(e.target instanceof HTMLSelectElement||e.target instanceof HTMLInputElement)audio.cue('click');});
+document.addEventListener('visibilitychange',()=>{if(document.hidden)audio.silence();});
+window.addEventListener('pagehide',()=>audio.silence());
 void init();

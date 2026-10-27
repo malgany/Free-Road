@@ -27,3 +27,6 @@ test('mata recebe faixa da largura do carro, sem duplicar marcas de rodas',()=>{
  const p=new THREE.Vector3(),q=new THREE.Quaternion(),scale=new THREE.Vector3();m.decompose(p,q,scale);
  assert(Math.abs(scale.x*.22-2.05)<.001);assert.equal(p.x,35);
 });
+test('água não recebe marcas, nem poeira, mesmo durante frenagem',()=>{
+ const scene=effectsOnly();scene.world.surfaceAt=()=> 'water';const s=initialState({x:0,z:12,heading:0});s.speed=8;scene.effects(s,.1,false);s.z-=1;scene.effects(s,.1,true);assert.equal(scene.trailIndex,0);assert.equal(scene.dustIndex,0);
+});

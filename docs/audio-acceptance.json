@@ -1,0 +1,16 @@
+{
+  "date": "2026-10-27",
+  "automatedTests": {"passed": 60, "failed": 0},
+  "build": "TypeScript + Vite + portable HTML passed",
+  "browser": {
+    "testedVia": "HTTP preview of production build and Jogar.html",
+    "audioInitialized": true,
+    "engineMeterObserved": 0.00954666431001125,
+    "mutedMeterObserved": 1.4189767329551895e-9,
+    "portableEngineMeterObserved": 0.013553507485465738,
+    "mutePersistedAfterReload": true,
+    "waterHudObserved": {"speedKmh": 18, "surface": "Água"},
+    "consoleErrorsObserved": [],
+    "note": "Output meter and UI behavior verified; no subjective listening-quality claim. Temporary water/impact fixtures existed only in dist/maps/test.json; original map restored before publishing."
+  }
+}

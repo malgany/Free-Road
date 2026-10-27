@@ -31,11 +31,11 @@ Se a localização não funcionar ao abrir o arquivo diretamente, use coordenada
 
 O jogo começa na vista aérea, no afastamento máximo. A terceira pessoa fica aproximadamente 5 m atrás do carro. Continue afastando na aérea para passar à ortográfica: ela tem enquadramento fixo e não amplia. Ao aproximar nela, a retenção do scroll precede a volta à aérea. C troca diretamente entre as quatro visões.
 
-Na pausa, **Configurações** fica entre **Continuar** e **Voltar ao início**. As abas são Mapa, Direção, Câmera, Visual e Atalhos. Sensibilidade começa em 100% e altura aérea em 105 m a cada abertura; **Restaurar padrões** restaura direção, câmera e gráficos sem alterar o mapa. Há botões de direção em telas de toque e seleção de câmera no menu.
+Na pausa, **Configurações** fica entre **Continuar** e **Voltar ao início**. As abas são Mapa, Direção, Câmera, Visual, Som e Atalhos. Sensibilidade começa em 100% e altura aérea em 105 m a cada abertura; **Restaurar padrões** restaura direção, câmera, gráficos e áudio sem alterar o mapa. Há botões de direção em telas de toque e seleção de câmera no menu.
 
 ## Mundo e iluminação
 
-- Aceleração de 5,5 m/s²: cerca de 10 s até 199 km/h, o dobro do tempo anterior. Limites: asfalto 199; neutro/terra 99,5; grama 79,6; mata 59,7 km/h. Ao entrar em terreno lento, desacelera progressivamente. Velocidade máxima de 199 km/h; ré limitada a 32,4 km/h. Física arcade a 60 Hz, colisões e interpolação entre quadros.
+- Aceleração de 5,5 m/s²: cerca de 9,1 s até 180 km/h. Limites percentuais: asfalto 100% (180); neutro/terra 50% (90); grama 40% (72); mata 30% (54); água 10% (18 km/h), inclusive em ré. Água atravessável sem marcas ou poeira. Ao entrar em terreno lento, desacelera progressivamente. Velocidade máxima de 180 km/h; ré limitada a 32,4 km/h. Física arcade a 60 Hz, colisões e interpolação entre quadros.
 - Ruas, construções e terrenos acompanham as informações OSM disponíveis. Floresta, mata e vegetação arbustiva usam verde escuro. Nos recortes com menos de três edifícios OSM, ruas urbanas podem receber até 48 casas ilustrativas. Elas são identificadas como sintéticas nos dados e não representam imóveis reais; não ocupam áreas mapeadas de água, vegetação ou vias.
 - O nome da rua aparece discretamente sobre o minimapa. Quando há nomes de bairro/região nos dados, a entrada é anunciada no topo. Ausência de dados não é substituída por um bairro inventado.
 - Relógio: dia das 06:00 às 18:00 (10 min reais), entardecer até 20:00 (90 s), noite até 04:00 (5 min), amanhecer até 06:00 (90 s). Pausa congela o ciclo. Faróis acendem automaticamente.
@@ -43,6 +43,14 @@ Na pausa, **Configurações** fica entre **Continuar** e **Voltar ao início**. 
 - Terrenos em níveis discretos: neutro 0; grama 1,2 cm; mata 2,4 cm; terra 3,6 cm; água 4 cm. Ruas preservadas a partir de 5 cm, sem alterar física vertical.
 - Na mata, rastro de 2,05 m de largura; marcas de pneus na grama, terra e chão neutro; no asfalto, ao frear ou fazer curvas fechadas. Limite de 2.048 segmentos e 48 partículas de poeira.
 - Interior geométrico com volante móvel, painel, bancos e janelas. Espelhos são decorativos. Sem trânsito, pedestres, missões ou multiplayer.
+
+## Áudio e impactos
+
+Sons sintetizados localmente com Tone.js 15.1.22, sem arquivos de áudio externos: motor com rotação e marchas simuladas; rodagem diferente em asfalto, terra, grama, mata e água; atrito ao virar/frear; sinal de ré; impacto proporcional à colisão e partículas limitadas a 64 instâncias. Não há música de fundo. Curvas leves geram atrito discreto; frenagens geram um ruído mais forte.
+
+Botões, menus, abas, ajustes, câmera, reset e respostas de localização têm feedback. O áudio é desbloqueado pelo primeiro clique/tecla, conforme as regras do navegador. Configurações → Som inclui volume, mudo, teste e medidor de saída. Preferências pequenas persistem no localStorage. Pausa corta o carro e mantém os sinais do menu; aba oculta silencia tudo. Falha de áudio não impede jogar. Sons rápidos têm limite de frequência.
+
+AGENTS.md torna a revisão do feedback sonoro obrigatória em alterações futuras. src/audio-model.ts contém as regras testáveis; src/audio.ts mantém um conjunto fixo de nós Tone.js; src/impact-particles.ts gerencia o pool de partículas.
 
 ## Streaming e privacidade
 

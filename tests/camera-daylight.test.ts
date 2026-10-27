@@ -28,8 +28,8 @@ test('dia dura dez minutos; entardecer, noite e amanhecer acendem/apagam faróis
   assert.equal(daylightAt(1035).phase,'Amanhecer');assert.deepEqual(daylightAt(CYCLE_SECONDS),daylightAt(0));
   for(const edge of [600,690,990,1080])assert(Math.abs(daylightAt(edge-.001).daylight-daylightAt(edge+.001).daylight)<0.001);
 });
-test('carro alcança exatamente 199 km/h e mantém limite de ré',()=>{
+test('carro alcança exatamente 180 km/h e mantém limite de ré',()=>{
   const s=initialState({x:0,z:0,heading:0});for(let i=0;i<1200;i++)stepCar(s,{...EMPTY_INPUT,forward:true},1/60);
-  assert(Math.abs(s.speed*3.6-199)<1e-8);
+  assert(Math.abs(s.speed*3.6-180)<1e-8);
   for(let i=0;i<1200;i++)stepCar(s,{...EMPTY_INPUT,backward:true},1/60);assert.equal(s.speed,-9);
 });

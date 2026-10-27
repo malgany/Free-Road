@@ -9,12 +9,8 @@ export class CollisionWorld {
   obstacles:Obstacle[]=[];grid=new Map<string,number[]>();cellSize=24;
   constructor(public map:GameMap){
     this.index=new MapIndex(map);
-    const bridges=map.roads.filter(r=>r.bridge&&!r.tunnel).flatMap(r=>r.points.slice(1).map((p,i)=>capsule(r.points[i],p,r.width)));
-    for(const a of map.areas.filter(a=>a.kind==='building'||a.kind==='water')){
-      // Water is solid except where actual bridge deck corridors cut it. Holes remain traversable.
-      const shapes=a.kind==='water'&&bridges.length?clipping.difference(a.polygons,...bridges) as MultiPolygon:a.polygons;
-      for(const polygon of shapes)this.obstacles.push({id:a.id,polygon,layer:a.kind==='water'?Number.NaN:a.layer});
-    }
+    // Water is traversable; its drag belongs to vehicle surface rules.
+    for(const a of map.areas.filter(a=>a.kind==='building'))for(const polygon of a.polygons)this.obstacles.push({id:a.id,polygon,layer:a.layer});
     for(const r of map.rocks)this.obstacles.push({id:r.id,polygon:[circle([r.x,r.z],r.radius)],layer:0});
     this.obstacles.forEach((o,i)=>{const b=boundsOf([o.polygon]);for(let x=Math.floor(b.minX/this.cellSize);x<=Math.floor(b.maxX/this.cellSize);x++)for(let z=Math.floor(b.minZ/this.cellSize);z<=Math.floor(b.maxZ/this.cellSize);z++){const key=`${x},${z}`;const arr=this.grid.get(key)??[];arr.push(i);this.grid.set(key,arr);}});
   }
@@ -24,7 +20,7 @@ export class CollisionWorld {
     return 0;
   }
   nearby(x:number,z:number):Obstacle[]{const ids=new Set<number>();const reach=CAR.radius+CAR.halfSegment+0.2;for(let i=Math.floor((x-reach)/this.cellSize);i<=Math.floor((x+reach)/this.cellSize);i++)for(let j=Math.floor((z-reach)/this.cellSize);j<=Math.floor((z+reach)/this.cellSize);j++)for(const id of this.grid.get(`${i},${j}`)??[])ids.add(id);return [...ids].map(id=>this.obstacles[id]);}
-  hit(x:number,z:number,heading:number):{nx:number;nz:number;depth:number;id:string}|null {
+  hit(x:number,z:number,heading:number):{nx:number;nz:number;depth:number;id:string;px?:number;pz?:number}|null {
     const h=CAR.halfSegment,r=CAR.radius+0.015,dx=Math.sin(heading)*h,dz=-Math.cos(heading)*h;
     const a:Point=[x-dx,z-dz],b:Point=[x+dx,z+dz];
     const bound=this.map.bounds;
@@ -48,11 +44,12 @@ export class CollisionWorld {
         const inside=inPolygon(onCar,o.polygon);let nx=(onCar[0]-near[0])/(best||1),nz=(onCar[1]-near[1])/(best||1);
         if(best<1e-8){nx=x-near[0];nz=z-near[1];const len=Math.hypot(nx,nz)||1;nx/=len;nz/=len;}
         if(inside){nx=-nx;nz=-nz;}
-        return {nx,nz,depth:inside?r+best:r-best,id:o.id};
+        return {nx,nz,depth:inside?r+best:r-best,id:o.id,px:near[0],pz:near[1]};
       }
     }return null;
   }
   move(state:CarState,dx:number,dz:number,heading:number){
+    state.impact=undefined;
     const sub=Math.max(1,Math.ceil(Math.hypot(dx,dz)/0.3),Math.ceil(Math.abs(heading-state.heading)/0.06));
     let contact:string|null=null;
     for(let i=0;i<sub;i++){
@@ -61,7 +58,8 @@ export class CollisionWorld {
         const hit=this.hit(state.x,state.z,state.heading);if(!hit)break;contact=hit.id;
         state.x+=hit.nx*(hit.depth+0.002);state.z+=hit.nz*(hit.depth+0.002);
         const normal=state.vx*hit.nx+state.vz*hit.nz;
-        if(normal<0){state.vx-=normal*hit.nx;state.vz-=normal*hit.nz;state.vx*=0.86;state.vz*=0.86;}
+        if(normal<0){
+          if(-normal>(state.impact?.strength??0))state.impact={strength:-normal,x:(hit.px??state.x-hit.nx*1.5)+hit.nx*.04,z:(hit.pz??state.z-hit.nz*1.5)+hit.nz*.04,nx:hit.nx,nz:hit.nz};state.vx-=normal*hit.nx;state.vz-=normal*hit.nz;state.vx*=0.86;state.vz*=0.86;}
       }
       if(this.hit(state.x,state.z,state.heading)){state.x=old.x;state.z=old.z;state.heading=old.heading;state.vx=state.vz=0;break;}
     }state.contact=contact;

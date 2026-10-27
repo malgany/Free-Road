@@ -8,7 +8,7 @@ import {TERRAIN_HEIGHT} from '../src/scene';
 import {cacheEvictions,CACHE_BYTES} from '../src/map-cache';
 import {makeTestMap} from '../src/test-map';
 
-test('aceleração leva o dobro do tempo original para atingir 199',()=>{
+test('aceleração leva o dobro do tempo original para atingir 180',()=>{
  const s=initialState({x:0,z:0,heading:0});let ticks=0;
  while(s.speed<CAR.maxSpeed&&ticks<2000){stepCar(s,{...EMPTY_INPUT,forward:true},1/60);ticks++;}
  assert(ticks/60>=2*(CAR.maxSpeed/11));assert(ticks/60<10.1);
